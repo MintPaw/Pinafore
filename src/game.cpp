@@ -34,7 +34,13 @@ enum UnitType {
 enum State {
 	STATE_NULL=0,
 
-	STATE_PLAYER_IDLE,
+	STATE_BK_IDLE_LEFT,
+	STATE_BK_IDLE_RIGHT,
+	STATE_BK_WALK_LEFT,
+	STATE_BK_WALK_RIGHT,
+	STATE_BK_ATTACK_LEFT,
+	STATE_BK_ATTACK_RIGHT,
+
 	STATE_FINAL,
 };
 
@@ -84,6 +90,10 @@ void updateGame();
 
 Unit *newUnit(UnitType type);
 void drawFrame(Frame *frame, float xpos, float ypos, bool flipX);
+
+int getRealTimeFramesInState(Unit *unit, int atFrame=-1);
+int getAnimFramesInState(Unit *unit, int atFrame=-1);
+int getCurrentAnimFrame(Unit *unit, int atFrame=-1);
 
 void updateGame() {
 	if (!game) {
@@ -142,7 +152,16 @@ void updateGame() {
 
 			for (int i = 0; i < game->spriteFramesNum; i++) {
 				Frame *frame = &game->spriteFrames[i];
-				char *nameEnd = strrchr(frame->name, '_');
+
+				char *nameEnd = NULL;
+				for (int endNum = 0; endNum < 9; endNum++) {
+					nameEnd = strrchr(frame->name, '0'+endNum);
+					if (nameEnd) break;
+				}
+				if (!nameEnd) {
+					printf("No name end found on name %s\n", frame->name);
+					Assert(0);
+				}
 				int nameLen = nameEnd - frame->name;
 
 				char curName[ANIM_NAME_LIMIT];
@@ -167,7 +186,13 @@ void updateGame() {
 
 				for (int frameI = 0; frameI < game->spriteFramesNum; frameI++) {
 					Frame *frame = &game->spriteFrames[frameI];
-					char *nameEnd = strrchr(frame->name, '_');
+
+					char *nameEnd = NULL;
+					for (int endNum = 0; endNum < 9; endNum++) {
+						nameEnd = strrchr(frame->name, '0'+endNum);
+						if (nameEnd) break;
+					}
+
 					int nameLen = nameEnd - frame->name;
 
 					char curName[ANIM_NAME_LIMIT];
@@ -181,10 +206,30 @@ void updateGame() {
 			for (int i = 0; i < tempAnimNamesNum; i++) {
 				Animation *anim = &spriteAnims[i];
 
-				if (streq(anim->name, "player/idle")) {
+				if (streq(anim->name, "blueKnight/BKIdleLL")) {
 					anim->loops = true;
-					anim->speed = 0.1;
-					game->anims[STATE_PLAYER_IDLE] = anim;
+					anim->speed = 0.2;
+					game->anims[STATE_BK_IDLE_LEFT] = anim;
+				} else if (streq(anim->name, "blueKnight/BKIdleRL")) {
+					anim->loops = true;
+					anim->speed = 0.2;
+					game->anims[STATE_BK_IDLE_RIGHT] = anim;
+				} else if (streq(anim->name, "blueKnight/BKWalkLL")) {
+					anim->loops = true;
+					anim->speed = 0.2;
+					game->anims[STATE_BK_WALK_LEFT] = anim;
+				} else if (streq(anim->name, "blueKnight/BKWalkRL")) {
+					anim->loops = true;
+					anim->speed = 0.2;
+					game->anims[STATE_BK_WALK_RIGHT] = anim;
+				} else if (streq(anim->name, "blueKnight/BKAtkLL")) {
+					anim->loops = true;
+					anim->speed = 0.2;
+					game->anims[STATE_BK_ATTACK_LEFT] = anim;
+				} else if (streq(anim->name, "blueKnight/BKAtkRL")) {
+					anim->loops = true;
+					anim->speed = 0.2;
+					game->anims[STATE_BK_ATTACK_RIGHT] = anim;
 				}
 			}
 
@@ -265,21 +310,23 @@ void updateGame() {
 			float speed = 5;
 			if (inputUp) {
 				veloY -= speed;
-				// unit->state = STATE_PLAYER_IDLE_UP;
 			}
 			if (inputDown) {
 				veloY += speed;
-				// unit->state = STATE_PLAYER_IDLE_DOWN;
 			}
 			if (inputLeft) {
 				veloX -= speed;
 				unit->facingRight = false;
-				// unit->state = STATE_PLAYER_IDLE_SIDE;
 			}
 			if (inputRight) {
 				veloX += speed;
 				unit->facingRight = true;
-				// unit->state = STATE_PLAYER_IDLE_SIDE;
+			}
+
+			if (inputLeft || inputRight || inputUp || inputDown) {
+				unit->state = unit->facingRight ? STATE_BK_WALK_RIGHT : STATE_BK_WALK_LEFT;
+			} else {
+				unit->state = unit->facingRight ? STATE_BK_IDLE_RIGHT : STATE_BK_IDLE_LEFT;
 			}
 		}
 
@@ -329,9 +376,9 @@ void updateGame() {
 		{ /// Rendering
 			unit->currentAnim = game->anims[unit->state];
 			if (unit->currentAnim) { /// Draw frame
-				// int framesIn = getRealTimeFramesInState(unit);
-				// Frame *frame = &game->spriteFrames[unit->currentAnim->frames[getCurrentAnimFrame(unit)]];
-				// drawFrame(frame, unit->x, unit->y, !unit->facingRight);
+				int framesIn = getRealTimeFramesInState(unit);
+				Frame *frame = &game->spriteFrames[unit->currentAnim->frames[getCurrentAnimFrame(unit)]];
+				drawFrame(frame, unit->x, unit->y, false);
 			}
 
 			/// Debug
@@ -380,11 +427,33 @@ Unit *newUnit(UnitType type) {
 			unit->collWidth = 32;
 			unit->collHeight = 32;
 
-			if (type == UNIT_PLAYER) unit->state = STATE_PLAYER_IDLE;
+			if (type == UNIT_PLAYER) unit->state = STATE_BK_IDLE_RIGHT;
 			unit->currentAnim = game->anims[unit->state];
 			return unit;
 		}
 	}
 
 	return NULL;
+}
+
+int getRealTimeFramesInState(Unit *unit, int atFrame) {
+	if (unit->prevState != unit->state) return 0;
+	if (atFrame == -1) atFrame = game->frameCount;
+	return (atFrame - unit->frameAnimStarted) * game->timeScale;
+}
+
+int getAnimFramesInState(Unit *unit, int atFrame) {
+	return getRealTimeFramesInState(unit, atFrame) * unit->currentAnim->speed;
+}
+
+int getCurrentAnimFrame(Unit *unit, int atFrame) {
+	int framesIn = getAnimFramesInState(unit, atFrame);
+
+	if (unit->currentAnim->loops) {
+		framesIn = framesIn % unit->currentAnim->framesNum;
+	} else {
+		if (framesIn > unit->currentAnim->framesNum - 1) framesIn = unit->currentAnim->framesNum - 1;
+	}
+
+	return framesIn;
 }
