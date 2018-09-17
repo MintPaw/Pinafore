@@ -76,6 +76,8 @@ struct Unit {
 	State walkRight;
 	State transLeftToRight;
 	State transRightToLeft;
+	State attackLeft;
+	State attackRight;
 
 	float x;
 	float y;
@@ -398,26 +400,31 @@ void updateGame() {
 
 		{ /// Player control
 			if (unit->isPlayer) {
-				Point moveVec = {};
-				if (inputUp) {
-					moveVec.y -= 1;
-				}
-				if (inputDown) {
-					moveVec.y += 1;
-				}
-				if (inputLeft) {
-					moveVec.x -= 1;
-				}
-				if (inputRight) {
-					moveVec.x += 1;
+				if (unit->isIdle) {
+					Point moveVec = {};
+					if (inputUp) {
+						moveVec.y -= 1;
+					}
+					if (inputDown) {
+						moveVec.y += 1;
+					}
+					if (inputLeft) {
+						moveVec.x -= 1;
+					}
+					if (inputRight) {
+						moveVec.x += 1;
+					}
+
+					moveVec.normalize(1);
+					unit->moveAccel = moveVec;
 				}
 
-				if (inputAttack) {
-					// unit->state = 
+				if (inputAttack) unit->state = unit->facingRight ? unit->attackRight : unit->attackLeft;
+
+				if ((unit->state == unit->attackRight || unit->state == unit->attackLeft) && getAnimFramesInState(unit) == unit->currentAnim->framesNum) {
+					unit->state = unit->facingRight ? unit->idleRight : unit->idleLeft;
 				}
 
-				moveVec.normalize(1);
-				unit->moveAccel = moveVec;
 			}
 		}
 
@@ -610,6 +617,8 @@ Unit *newUnit(UnitType type) {
 				unit->walkRight = STATE_BK_WALK_RIGHT;
 				unit->transLeftToRight = STATE_BK_TRANS_LEFT_TO_RIGHT;
 				unit->transRightToLeft = STATE_BK_TRANS_RIGHT_TO_LEFT;
+				unit->attackLeft = STATE_BK_ATTACK_LEFT;
+				unit->attackRight = STATE_BK_ATTACK_RIGHT;
 			} else if (type == UNIT_RM) {
 				unit->idleLeft = STATE_RM_IDLE_LEFT;
 				unit->idleRight = STATE_RM_IDLE_RIGHT;
@@ -617,6 +626,8 @@ Unit *newUnit(UnitType type) {
 				unit->walkRight = STATE_RM_WALK_RIGHT;
 				unit->transLeftToRight = STATE_RM_TRANS_LEFT_TO_RIGHT;
 				unit->transRightToLeft = STATE_RM_TRANS_RIGHT_TO_LEFT;
+				unit->attackLeft = STATE_RM_ATTACK_LEFT;
+				unit->attackRight = STATE_RM_ATTACK_RIGHT;
 			}
 
 			unit->state = unit->idleRight;
