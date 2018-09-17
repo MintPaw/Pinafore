@@ -43,6 +43,15 @@ enum State {
 	STATE_BK_TRANS_LEFT_TO_RIGHT,
 	STATE_BK_TRANS_RIGHT_TO_LEFT,
 
+	STATE_RM_IDLE_LEFT,
+	STATE_RM_IDLE_RIGHT,
+	STATE_RM_WALK_LEFT,
+	STATE_RM_WALK_RIGHT,
+	STATE_RM_ATTACK_LEFT,
+	STATE_RM_ATTACK_RIGHT,
+	STATE_RM_TRANS_LEFT_TO_RIGHT,
+	STATE_RM_TRANS_RIGHT_TO_LEFT,
+
 	STATE_FINAL,
 };
 
@@ -238,6 +247,36 @@ void updateGame() {
 				} else if (streq(anim->name, "blueKnight/BKTransRR")) {
 					anim->speed = 0.2;
 					game->anims[STATE_BK_TRANS_RIGHT_TO_LEFT] = anim;
+				} else if (streq(anim->name, "redMinotaur/RMIdleLL")) {
+					anim->loops = true;
+					anim->speed = 0.2;
+					game->anims[STATE_RM_IDLE_LEFT] = anim;
+				} else if (streq(anim->name, "redMinotaur/RMIdleRL")) {
+					anim->loops = true;
+					anim->speed = 0.2;
+					game->anims[STATE_RM_IDLE_RIGHT] = anim;
+				} else if (streq(anim->name, "redMinotaur/RMWalkLL")) {
+					anim->loops = true;
+					anim->speed = 0.2;
+					game->anims[STATE_RM_WALK_LEFT] = anim;
+				} else if (streq(anim->name, "redMinotaur/RMWalkRL")) {
+					anim->loops = true;
+					anim->speed = 0.2;
+					game->anims[STATE_RM_WALK_RIGHT] = anim;
+				} else if (streq(anim->name, "redMinotaur/RMAtkLL")) {
+					anim->loops = true;
+					anim->speed = 0.2;
+					game->anims[STATE_RM_ATTACK_LEFT] = anim;
+				} else if (streq(anim->name, "redMinotaur/RMAtkRL")) {
+					anim->loops = true;
+					anim->speed = 0.2;
+					game->anims[STATE_RM_ATTACK_RIGHT] = anim;
+				} else if (streq(anim->name, "redMinotaur/RMTransLL")) {
+					anim->speed = 0.2;
+					game->anims[STATE_RM_TRANS_LEFT_TO_RIGHT] = anim;
+				} else if (streq(anim->name, "redMinotaur/RMTransRR")) {
+					anim->speed = 0.2;
+					game->anims[STATE_RM_TRANS_RIGHT_TO_LEFT] = anim;
 				}
 			}
 
