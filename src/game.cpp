@@ -28,7 +28,8 @@ struct Animation {
 
 enum UnitType {
 	UNIT_NULL=0,
-	UNIT_PLAYER,
+	UNIT_BK,
+	UNIT_RM,
 };
 
 enum State {
@@ -57,6 +58,7 @@ enum State {
 
 struct Unit {
 	bool exists;
+	bool isPlayer;
 
 	UnitType type;
 	State prevState;
@@ -65,6 +67,13 @@ struct Unit {
 	Animation *currentAnim;
 	int frameAnimStarted;
 	bool facingRight;
+
+	State idleLeft;
+	State idleRight;
+	State walkLeft;
+	State walkRight;
+	State transLeftToRight;
+	State transRightToLeft;
 
 	float x;
 	float y;
@@ -324,9 +333,19 @@ void updateGame() {
 		}
 
 		/// Setup player
-		game->player = newUnit(UNIT_PLAYER);
+		game->player = newUnit(UNIT_BK);
+		game->player->isPlayer = true;
 		game->player->x = platform->windowWidth/2;
 		game->player->y = platform->windowHeight/2;
+
+		/// Setup enemies
+		Unit *enemy1 = newUnit(UNIT_RM);
+		enemy1->x = 200;
+		enemy1->y = 200;
+
+		Unit *enemy2 = newUnit(UNIT_RM);
+		enemy2->x = platform->windowWidth - 200;
+		enemy2->y = platform->windowHeight - 200;
 	}
 
 	clearRenderer();
@@ -358,59 +377,66 @@ void updateGame() {
 		if (!unit->exists) continue;
 
 		unit->moveAccel.setTo();
-		if (unit->type == UNIT_PLAYER) {
-			float speed = 1;
-			if (inputUp) {
-				unit->moveAccel.y = -speed;
-			}
-			if (inputDown) {
-				unit->moveAccel.y = speed;
-			}
-			if (inputLeft) {
-				unit->moveAccel.x = -speed;
-				unit->facingRight = false;
-			}
-			if (inputRight) {
-				unit->moveAccel.x = speed;
-				unit->facingRight = true;
-			}
 
-			if (inputLeft) {
-				if (unit->state == STATE_BK_IDLE_LEFT || unit->state == STATE_BK_WALK_LEFT) {
-					unit->state = STATE_BK_WALK_LEFT;
-				} else {
-					unit->state = STATE_BK_TRANS_RIGHT_TO_LEFT;
-					if (getAnimFramesInState(unit) == unit->currentAnim->framesNum) unit->state = STATE_BK_WALK_LEFT;
+		{ /// Player control
+			if (unit->isPlayer) {
+				float speed = 1;
+				if (inputUp) {
+					unit->moveAccel.y = -speed;
 				}
-			}
-
-			else if (inputRight) {
-				if (unit->state == STATE_BK_IDLE_RIGHT || unit->state == STATE_BK_WALK_RIGHT) {
-					unit->state = STATE_BK_WALK_RIGHT;
-				} else {
-					unit->state = STATE_BK_TRANS_LEFT_TO_RIGHT;
-					if (getAnimFramesInState(unit) == unit->currentAnim->framesNum) unit->state = STATE_BK_WALK_RIGHT;
+				if (inputDown) {
+					unit->moveAccel.y = speed;
 				}
-			}
-
-			else if (inputUp || inputDown) {
-				unit->state = unit->facingRight ? STATE_BK_WALK_RIGHT : STATE_BK_WALK_LEFT;
-			}
-
-			else if (!inputUp && !inputDown && !inputLeft && !inputRight) {
-				unit->state = unit->facingRight ? STATE_BK_IDLE_RIGHT : STATE_BK_IDLE_LEFT;
+				if (inputLeft) {
+					unit->moveAccel.x = -speed;
+					unit->facingRight = false;
+				}
+				if (inputRight) {
+					unit->moveAccel.x = speed;
+					unit->facingRight = true;
+				}
 			}
 		}
 
-		Point veloReduce = unit->velo;
-		veloReduce.multiply(&unit->drag);
-		veloReduce.multiply(game->timeScale);
-		unit->velo.subtract(&veloReduce);
+		{ /// Movement animation
+			if (unit->moveAccel.x < 0) {
+				if (unit->state == unit->idleLeft || unit->state == unit->walkLeft) {
+					unit->state = unit->walkLeft;
+				} else {
+					unit->state = unit->transRightToLeft;
+					if (getAnimFramesInState(unit) == unit->currentAnim->framesNum) unit->state = unit->walkLeft;
+				}
+			}
 
-		unit->accel.setTo();
-		unit->accel.add(&unit->moveAccel);
+			else if (unit->moveAccel.x > 0) {
+				if (unit->state == unit->idleRight || unit->state == unit->walkRight) {
+					unit->state = unit->walkRight;
+				} else {
+					unit->state = unit->transLeftToRight;
+					if (getAnimFramesInState(unit) == unit->currentAnim->framesNum) unit->state = unit->walkRight;
+				}
+			}
 
-		unit->velo.add(&unit->accel);
+			else if (unit->moveAccel.y != 0) {
+				unit->state = unit->facingRight ? unit->walkRight : unit->walkLeft;
+			}
+
+			else if (unit->moveAccel.isZero()) {
+				unit->state = unit->facingRight ? unit->idleRight : unit->idleLeft;
+			}
+		}
+
+		{ /// Update physics
+			Point veloReduce = unit->velo;
+			veloReduce.multiply(&unit->drag);
+			veloReduce.multiply(game->timeScale);
+			unit->velo.subtract(&veloReduce);
+
+			unit->accel.setTo();
+			unit->accel.add(&unit->moveAccel);
+
+			unit->velo.add(&unit->accel);
+		}
 
 		{ /// Collision
 			int maxIntegrations = 5;
@@ -509,8 +535,22 @@ Unit *newUnit(UnitType type) {
 			unit->collWidth = 32;
 			unit->collHeight = 32;
 			unit->drag.setTo(0.2, 0.2);
-
-			if (type == UNIT_PLAYER) unit->state = STATE_BK_IDLE_RIGHT;
+			if (type == UNIT_BK) {
+				unit->idleLeft = STATE_BK_IDLE_LEFT;
+				unit->idleRight = STATE_BK_IDLE_RIGHT;
+				unit->walkLeft = STATE_BK_WALK_LEFT;
+				unit->walkRight = STATE_BK_WALK_RIGHT;
+				unit->transLeftToRight = STATE_BK_TRANS_LEFT_TO_RIGHT;
+				unit->transRightToLeft = STATE_BK_TRANS_RIGHT_TO_LEFT;
+			} else if (type == UNIT_RM) {
+				unit->idleLeft = STATE_RM_IDLE_LEFT;
+				unit->idleRight = STATE_RM_IDLE_RIGHT;
+				unit->walkLeft = STATE_RM_WALK_LEFT;
+				unit->walkRight = STATE_RM_WALK_RIGHT;
+				unit->transLeftToRight = STATE_RM_TRANS_LEFT_TO_RIGHT;
+				unit->transRightToLeft = STATE_RM_TRANS_RIGHT_TO_LEFT;
+			}
+			unit->state = unit->idleRight;
 			unit->currentAnim = game->anims[unit->state];
 			return unit;
 		}

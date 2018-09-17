@@ -39,6 +39,8 @@ struct Point {
 	void subtract(float other);
 	void multiply(float other);
 	void divide(float other);
+
+	bool isZero();
 };
 
 struct Rect {
@@ -186,6 +188,10 @@ void Point::multiply(float other) {
 void Point::divide(float other) {
 	this->x /= other;
 	this->y /= other;
+}
+
+bool Point::isZero() {
+	return this->x == 0 && this->y == 0;
 }
 
 void Rect::setTo(float x, float y, float width, float height) {
