@@ -366,15 +366,15 @@ void updateGame() {
 	bool inputRight = false;
 	bool inputUp = false;
 	bool inputDown = false;
-	bool inputJump = false;
+	// bool inputJump = false;
 	bool inputAttack = false;
 	{ /// Update inputs
 		if (keyPressed(KEY_LEFT) || keyPressed('A')) inputLeft = true;
 		if (keyPressed(KEY_RIGHT) || keyPressed('D')) inputRight = true;
 		if (keyPressed(KEY_UP) || keyPressed('W')) inputUp = true;
 		if (keyPressed(KEY_DOWN) || keyPressed('S')) inputDown = true;
-		if (keyJustPressed(' ')) inputJump = true;
-		if (keyJustPressed('Z')) inputAttack = true;
+		// if (keyJustPressed('?')) inputJump = true;
+		if (keyJustPressed(' ')) inputAttack = true;
 
 		if (keyJustPressed('-')) game->timeScale /= 2.0;
 		if (keyJustPressed('=')) game->timeScale *= 2.0;
