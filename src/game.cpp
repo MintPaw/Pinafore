@@ -123,6 +123,8 @@ int getRealTimeFramesInState(Unit *unit, int atFrame=-1);
 int getAnimFramesInState(Unit *unit, int atFrame=-1);
 int getCurrentAnimFrame(Unit *unit, int atFrame=-1);
 
+int qsortActiveUnits(const void *a, const void *b);
+
 void updateGame() {
 	if (!game) {
 		game = (Game *)malloc(sizeof(Game));
@@ -374,9 +376,20 @@ void updateGame() {
 		if (keyJustPressed('=')) game->timeScale *= 2.0;
 	}
 
-	/// Update units
+	/// Sort units
+	Unit *activeUnits[UNIT_LIMIT];
+	int activeUnitsNum = 0;
+
 	for (int i = 0; i < UNIT_LIMIT; i++) {
 		Unit *unit = &game->units[i];
+		if (unit->exists) activeUnits[activeUnitsNum++] = unit;
+	}
+
+	qsort(activeUnits, activeUnitsNum, sizeof(Unit *), qsortActiveUnits);
+
+	/// Update units
+	for (int i = 0; i < activeUnitsNum; i++) {
+		Unit *unit = activeUnits[i];
 		if (!unit->exists) continue;
 
 		unit->moveAccel.setTo();
@@ -617,4 +630,11 @@ int getCurrentAnimFrame(Unit *unit, int atFrame) {
 	}
 
 	return framesIn;
+}
+
+int qsortActiveUnits(const void *a, const void *b) {
+	Unit *unit1 = *(Unit **)a;
+	Unit *unit2 = *(Unit **)b;
+
+	return unit1->y - unit2->y;
 }
