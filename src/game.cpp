@@ -40,6 +40,8 @@ enum State {
 	STATE_BK_WALK_RIGHT,
 	STATE_BK_ATTACK_LEFT,
 	STATE_BK_ATTACK_RIGHT,
+	STATE_BK_TRANS_LEFT_TO_RIGHT,
+	STATE_BK_TRANS_RIGHT_TO_LEFT,
 
 	STATE_FINAL,
 };
@@ -230,6 +232,12 @@ void updateGame() {
 					anim->loops = true;
 					anim->speed = 0.2;
 					game->anims[STATE_BK_ATTACK_RIGHT] = anim;
+				} else if (streq(anim->name, "blueKnight/BKTransLL")) {
+					anim->speed = 0.2;
+					game->anims[STATE_BK_TRANS_LEFT_TO_RIGHT] = anim;
+				} else if (streq(anim->name, "blueKnight/BKTransRR")) {
+					anim->speed = 0.2;
+					game->anims[STATE_BK_TRANS_RIGHT_TO_LEFT] = anim;
 				}
 			}
 
@@ -323,9 +331,29 @@ void updateGame() {
 				unit->facingRight = true;
 			}
 
-			if (inputLeft || inputRight || inputUp || inputDown) {
+			if (inputLeft) {
+				if (unit->state == STATE_BK_IDLE_LEFT || unit->state == STATE_BK_WALK_LEFT) {
+					unit->state = STATE_BK_WALK_LEFT;
+				} else {
+					unit->state = STATE_BK_TRANS_RIGHT_TO_LEFT;
+					if (getAnimFramesInState(unit) == unit->currentAnim->framesNum) unit->state = STATE_BK_WALK_LEFT;
+				}
+			}
+
+			else if (inputRight) {
+				if (unit->state == STATE_BK_IDLE_RIGHT || unit->state == STATE_BK_WALK_RIGHT) {
+					unit->state = STATE_BK_WALK_RIGHT;
+				} else {
+					unit->state = STATE_BK_TRANS_LEFT_TO_RIGHT;
+					if (getAnimFramesInState(unit) == unit->currentAnim->framesNum) unit->state = STATE_BK_WALK_RIGHT;
+				}
+			}
+
+			else if (inputUp || inputDown) {
 				unit->state = unit->facingRight ? STATE_BK_WALK_RIGHT : STATE_BK_WALK_LEFT;
-			} else {
+			}
+
+			else if (!inputUp && !inputDown && !inputLeft && !inputRight) {
 				unit->state = unit->facingRight ? STATE_BK_IDLE_RIGHT : STATE_BK_IDLE_LEFT;
 			}
 		}
@@ -382,8 +410,8 @@ void updateGame() {
 			}
 
 			/// Debug
-			drawCircle(unit->x, unit->y, 4, 0xFF00FF00);
-			drawRect(unit->x - unit->collWidth/2, unit->y - unit->collHeight, unit->collWidth, unit->collHeight, 0x88FF0000);
+			// drawCircle(unit->x, unit->y, 4, 0xFF00FF00);
+			// drawRect(unit->x - unit->collWidth/2, unit->y - unit->collHeight, unit->collWidth, unit->collHeight, 0x88FF0000);
 		}
 	}
 
