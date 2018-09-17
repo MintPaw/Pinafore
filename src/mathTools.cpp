@@ -29,6 +29,16 @@ struct Point {
 
 	void setTo(float x=0, float y=0);
 	void normalize(float scale=1);
+
+	void add(Point *other);
+	void subtract(Point *other);
+	void multiply(Point *other);
+	void divide(Point *other);
+
+	void add(float other);
+	void subtract(float other);
+	void multiply(float other);
+	void divide(float other);
 };
 
 struct Rect {
@@ -136,6 +146,46 @@ void Point::normalize(float scale) {
 		this->x = scale * this->x / norm;
 		this->y = scale * this->y / norm;
 	}
+}
+
+void Point::add(Point *other) {
+	this->x += other->x;
+	this->y += other->y;
+}
+
+void Point::subtract(Point *other) {
+	this->x -= other->x;
+	this->y -= other->y;
+}
+
+void Point::multiply(Point *other) {
+	this->x *= other->x;
+	this->y *= other->y;
+}
+
+void Point::divide(Point *other) {
+	this->x /= other->x;
+	this->y /= other->y;
+}
+
+void Point::add(float other) {
+	this->x += other;
+	this->y += other;
+}
+
+void Point::subtract(float other) {
+	this->x -= other;
+	this->y -= other;
+}
+
+void Point::multiply(float other) {
+	this->x *= other;
+	this->y *= other;
+}
+
+void Point::divide(float other) {
+	this->x /= other;
+	this->y /= other;
 }
 
 void Rect::setTo(float x, float y, float width, float height) {

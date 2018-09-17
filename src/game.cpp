@@ -70,6 +70,12 @@ struct Unit {
 	float y;
 	float collWidth;
 	float collHeight;
+
+	Point moveAccel;
+
+	Point velo;
+	Point accel;
+	Point drag;
 };
 
 struct Game {
@@ -351,22 +357,21 @@ void updateGame() {
 		Unit *unit = &game->units[i];
 		if (!unit->exists) continue;
 
-		float veloX = 0;
-		float veloY = 0;
+		unit->moveAccel.setTo();
 		if (unit->type == UNIT_PLAYER) {
-			float speed = 5;
+			float speed = 1;
 			if (inputUp) {
-				veloY -= speed;
+				unit->moveAccel.y = -speed;
 			}
 			if (inputDown) {
-				veloY += speed;
+				unit->moveAccel.y = speed;
 			}
 			if (inputLeft) {
-				veloX -= speed;
+				unit->moveAccel.x = -speed;
 				unit->facingRight = false;
 			}
 			if (inputRight) {
-				veloX += speed;
+				unit->moveAccel.x = speed;
 				unit->facingRight = true;
 			}
 
@@ -397,11 +402,21 @@ void updateGame() {
 			}
 		}
 
+		Point veloReduce = unit->velo;
+		veloReduce.multiply(&unit->drag);
+		veloReduce.multiply(game->timeScale);
+		unit->velo.subtract(&veloReduce);
+
+		unit->accel.setTo();
+		unit->accel.add(&unit->moveAccel);
+
+		unit->velo.add(&unit->accel);
+
 		{ /// Collision
 			int maxIntegrations = 5;
 			for (int integrateI = 0; integrateI < maxIntegrations; integrateI++) {
-				unit->x += veloX/maxIntegrations * game->timeScale;
-				unit->y += veloY/maxIntegrations * game->timeScale;
+				unit->x += unit->velo.x/maxIntegrations * game->timeScale;
+				unit->y += unit->velo.y/maxIntegrations * game->timeScale;
 
 				for (int tileI = 0; tileI < game->tilesWide*game->tilesHigh; tileI++) {
 					if (game->collTiles[tileI] == 0) continue;
@@ -412,22 +427,22 @@ void updateGame() {
 
 					while (tile.containsPoint(unit->x - unit->collWidth/2, unit->y - unit->collHeight/2)) { // Left
 						unit->x += bump;
-						veloX = 0;
+						unit->velo.x = 0;
 					}
 
 					while (tile.containsPoint(unit->x + unit->collWidth/2, unit->y - unit->collHeight/2)) { // Right
 						unit->x -= bump;
-						veloX = 0;
+						unit->velo.x = 0;
 					}
 
 					while (tile.containsPoint(unit->x, unit->y)) { // Bot
 						unit->y -= bump;
-						veloY = 0;
+						unit->velo.y = 0;
 					}
 
 					while (tile.containsPoint(unit->x, unit->y - unit->collHeight)) { // Top
 						unit->y += bump;
-						veloY = 0;
+						unit->velo.y = 0;
 					}
 				}
 			}
@@ -493,6 +508,7 @@ Unit *newUnit(UnitType type) {
 			unit->type = type;
 			unit->collWidth = 32;
 			unit->collHeight = 32;
+			unit->drag.setTo(0.2, 0.2);
 
 			if (type == UNIT_PLAYER) unit->state = STATE_BK_IDLE_RIGHT;
 			unit->currentAnim = game->anims[unit->state];
