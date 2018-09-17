@@ -249,11 +249,11 @@ void updateGame() {
 					anim->loops = true;
 					anim->speed = 0.2;
 					game->anims[STATE_BK_IDLE_RIGHT] = anim;
-				} else if (streq(anim->name, "blueKnight/BKWalkLL")) {
+				} else if (streq(anim->name, "blueKnight/BKWalkL")) {
 					anim->loops = true;
 					anim->speed = 0.2;
 					game->anims[STATE_BK_WALK_LEFT] = anim;
-				} else if (streq(anim->name, "blueKnight/BKWalkRL")) {
+				} else if (streq(anim->name, "blueKnight/BKWalkR")) {
 					anim->loops = true;
 					anim->speed = 0.2;
 					game->anims[STATE_BK_WALK_RIGHT] = anim;
@@ -279,11 +279,11 @@ void updateGame() {
 					anim->loops = true;
 					anim->speed = 0.2;
 					game->anims[STATE_RM_IDLE_RIGHT] = anim;
-				} else if (streq(anim->name, "redMinotaur/RMWalkLL")) {
+				} else if (streq(anim->name, "redMinotaur/RMWalkL")) {
 					anim->loops = true;
 					anim->speed = 0.2;
 					game->anims[STATE_RM_WALK_LEFT] = anim;
-				} else if (streq(anim->name, "redMinotaur/RMWalkRL")) {
+				} else if (streq(anim->name, "redMinotaur/RMWalkR")) {
 					anim->loops = true;
 					anim->speed = 0.2;
 					game->anims[STATE_RM_WALK_RIGHT] = anim;
