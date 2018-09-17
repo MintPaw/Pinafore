@@ -20,6 +20,7 @@ bool rndBool();
 
 float distanceBetween(float x1, float y1, float x2, float y2);
 float radsBetween(float x1, float y1, float x2, float y2);
+Point vectorBetween(float x1, float y1, float x2, float y2);
 float toDeg(float rads);
 float toRad(float degs);
 
@@ -39,6 +40,9 @@ struct Point {
 	void subtract(float other);
 	void multiply(float other);
 	void divide(float other);
+
+	float distance(Point *other);
+	float distance(float x, float y);
 
 	bool isZero();
 };
@@ -129,6 +133,13 @@ float radsBetween(float x1, float y1, float x2, float y2) {
 	return atan2(y2 - y1, x2 - x1);
 }
 
+Point vectorBetween(float x1, float y1, float x2, float y2) {
+	float rads = radsBetween(x1, y1, x2, y2);
+
+	Point point = {(float)cos(rads), (float)sin(rads)};
+	return point;
+}
+
 float toDeg(float rads) {
 	return rads * 57.2958;
 }
@@ -188,6 +199,14 @@ void Point::multiply(float other) {
 void Point::divide(float other) {
 	this->x /= other;
 	this->y /= other;
+}
+
+float Point::distance(Point *other) {
+	return distanceBetween(this->x, this->y, other->x, other->y);
+}
+
+float Point::distance(float x, float y) {
+	return distanceBetween(this->x, this->y, x, y);
 }
 
 bool Point::isZero() {

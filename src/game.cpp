@@ -85,6 +85,8 @@ struct Unit {
 	Point velo;
 	Point accel;
 	Point drag;
+
+	int memory[8];
 };
 
 struct Game {
@@ -125,6 +127,7 @@ void updateGame() {
 	if (!game) {
 		game = (Game *)malloc(sizeof(Game));
 		memset(game, 0, sizeof(Game));
+		printf("Game is %0.2f mb btw\n", sizeof(Game) / 1024.0 / 1024.0);
 
 		game->sprites = uploadPngTexturePath("assets/sprites.png");
 		game->timeScale = 1;
@@ -380,26 +383,60 @@ void updateGame() {
 
 		{ /// Player control
 			if (unit->isPlayer) {
-				float speed = 1;
+				Point moveVec = {};
 				if (inputUp) {
-					unit->moveAccel.y = -speed;
+					moveVec.y = -1;
 				}
 				if (inputDown) {
-					unit->moveAccel.y = speed;
+					moveVec.y = 1;
 				}
 				if (inputLeft) {
-					unit->moveAccel.x = -speed;
-					unit->facingRight = false;
+					moveVec.x = -1;
 				}
 				if (inputRight) {
-					unit->moveAccel.x = speed;
-					unit->facingRight = true;
+					moveVec.x = 1;
 				}
+
+				moveVec.normalize(1);
+				unit->moveAccel = moveVec;
+			}
+		}
+
+		{ /// AI control
+			if (!unit->isPlayer) {
+				int moveToX = unit->memory[0];
+				int moveToY = unit->memory[1];
+				int waitFrames = unit->memory[2];
+
+				if (distanceBetween(unit->x, unit->y, moveToX, moveToY) <= 10) {
+					moveToX = 0;
+					moveToY = 0;
+				}
+
+				if (moveToX == 0 && moveToY == 0) {
+					waitFrames--;
+					if (waitFrames <= 0) {
+						waitFrames = rndInt(60, 120);
+						moveToX = rndInt(100, platform->windowWidth - 100);
+						moveToY = rndInt(100, platform->windowHeight - 100);
+					}
+				} else {
+					Point moveVec = vectorBetween(unit->x, unit->y, moveToX, moveToY);
+					moveVec.normalize();
+					unit->moveAccel = moveVec;
+
+					drawCircle(moveToX, moveToY, 4, 0xFFFF0000);
+				}
+
+				unit->memory[0] = moveToX;
+				unit->memory[1] = moveToY;
+				unit->memory[2] = waitFrames;
 			}
 		}
 
 		{ /// Movement animation
 			if (unit->moveAccel.x < 0) {
+				unit->facingRight = false;
 				if (unit->state == unit->idleLeft || unit->state == unit->walkLeft) {
 					unit->state = unit->walkLeft;
 				} else {
@@ -409,6 +446,7 @@ void updateGame() {
 			}
 
 			else if (unit->moveAccel.x > 0) {
+				unit->facingRight = true;
 				if (unit->state == unit->idleRight || unit->state == unit->walkRight) {
 					unit->state = unit->walkRight;
 				} else {
