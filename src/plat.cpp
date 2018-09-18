@@ -19,7 +19,7 @@
 #endif
 
 enum KeyState { KEY_RELEASED = 0, KEY_PRESSED, KEY_JUST_RELEASED, KEY_JUST_PRESSED };
-enum PlatformKey { KEY_LEFT=301, KEY_RIGHT=302, KEY_UP=303, KEY_DOWN=304, KEY_SHIFT=305, KEY_BACKSPACE=306, KEY_CTRL=307 };
+enum PlatformKey { KEY_LEFT=301, KEY_RIGHT=302, KEY_UP=303, KEY_DOWN=304, KEY_SHIFT=305, KEY_BACKSPACE=306, KEY_CTRL=307, KEY_BACKTICK=308 };
 
 struct NanoTime {
 	unsigned int seconds;
@@ -151,6 +151,7 @@ void updateEvents() {
 			if (key == SDLK_DOWN) key = KEY_DOWN;
 			if (key == SDLK_LEFT) key = KEY_LEFT;
 			if (key == SDLK_RIGHT) key = KEY_RIGHT;
+			if (key == SDLK_BACKQUOTE) key = KEY_BACKTICK;
 			if (key > KEY_LIMIT) return;
 
 			if (platform->keys[key] == KEY_RELEASED || platform->keys[key] == KEY_JUST_RELEASED) {
@@ -168,6 +169,7 @@ void updateEvents() {
 			if (key == SDLK_DOWN) key = KEY_DOWN;
 			if (key == SDLK_LEFT) key = KEY_LEFT;
 			if (key == SDLK_RIGHT) key = KEY_RIGHT;
+			if (key == SDLK_BACKQUOTE) key = KEY_BACKTICK;
 			if (key > KEY_LIMIT) return;
 
 			if (platform->keys[key] == KEY_PRESSED || platform->keys[key] == KEY_JUST_PRESSED) {

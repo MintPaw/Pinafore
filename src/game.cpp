@@ -115,6 +115,7 @@ struct Hitbox {
 };
 
 struct Game {
+	bool debugDraw;
 	int frameCount;
 	float timeScale;
 
@@ -404,6 +405,7 @@ void updateGame() {
 
 		if (keyJustPressed('-')) game->timeScale /= 2.0;
 		if (keyJustPressed('=')) game->timeScale *= 2.0;
+		if (keyJustPressed(KEY_BACKTICK)) game->debugDraw = !game->debugDraw;
 	}
 
 	/// Sort units
@@ -467,7 +469,7 @@ void updateGame() {
 
 					if (distanceBetween(unit->x, unit->y, curWalkDest.x, curWalkDest.y) <= 10) unit->walkDest.setTo();
 
-					drawCircle(curWalkDest.x, curWalkDest.y, 4, 0xFF0000FF);
+					if (game->debugDraw) drawCircle(curWalkDest.x, curWalkDest.y, 4, 0xFF0000FF);
 				}
 
 				if ((unit->state == unit->attackRight || unit->state == unit->attackLeft) && getAnimFramesInState(unit) == unit->currentAnim->framesNum) {
@@ -499,7 +501,7 @@ void updateGame() {
 					moveVec.normalize();
 					unit->moveAccel = moveVec;
 
-					drawCircle(moveToX, moveToY, 4, 0xFFFF0000);
+					if (game->debugDraw) drawCircle(moveToX, moveToY, 4, 0xFFFF0000);
 				}
 
 				unit->memory[0] = moveToX;
@@ -676,10 +678,12 @@ void updateGame() {
 			}
 
 			/// Debug
-			// drawCircle(unit->x, unit->y, 4, 0xFF00FF00);
+			if (game->debugDraw) {
+				drawCircle(unit->x, unit->y, 4, 0xFF00FF00);
 
-			// Rect unitRect = getUnitRect(unit);
-			// drawRect(unitRect.x, unitRect.y, unitRect.width, unitRect.height, 0x88FF0000);
+				Rect unitRect = getUnitRect(unit);
+				drawRect(unitRect.x, unitRect.y, unitRect.width, unitRect.height, 0x4400FF00);
+			}
 		}
 	}
 
@@ -695,7 +699,7 @@ void updateGame() {
 
 			if (game->frameCount - hitbox->frameCreated > hitbox->framesPersists) hitbox->exists = false;
 
-			drawRect(hitbox->hitRect.x, hitbox->hitRect.y, hitbox->hitRect.width, hitbox->hitRect.height, 0x88FF0000);
+			if (game->debugDraw) drawRect(hitbox->hitRect.x, hitbox->hitRect.y, hitbox->hitRect.width, hitbox->hitRect.height, 0x88FF0000);
 		};
 	}
 
