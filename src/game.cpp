@@ -84,6 +84,9 @@ struct Unit {
 	float collWidth;
 	float collHeight;
 
+	Point walkDest;
+	Unit *unitTarget;
+
 	Point moveAccel;
 
 	Point velo;
@@ -400,31 +403,51 @@ void updateGame() {
 
 		{ /// Player control
 			if (unit->isPlayer) {
-				if (unit->isIdle) {
-					Point moveVec = {};
-					if (inputUp) {
-						moveVec.y -= 1;
-					}
-					if (inputDown) {
-						moveVec.y += 1;
-					}
-					if (inputLeft) {
-						moveVec.x -= 1;
-					}
-					if (inputRight) {
-						moveVec.x += 1;
+				if (platform->mouseJustDown) {
+					unit->unitTarget = NULL;
+					unit->walkDest.setTo();
+
+					for (int otherI = 0; otherI < activeUnitsNum; otherI++) {
+						Unit *other = activeUnits[otherI];
+						if (other == unit) continue;
+
+						if (pointInRect(platform->mouseX, platform->mouseY, other->x - other->collWidth/2, other->y - other->collHeight, other->collWidth, other->collHeight)) {
+							unit->unitTarget = other;
+							break;
+						}
 					}
 
-					moveVec.normalize(1);
-					unit->moveAccel = moveVec;
+					if (!unit->unitTarget) {
+						unit->walkDest.x = platform->mouseX;
+						unit->walkDest.y = platform->mouseY;
+					}
 				}
 
-				if (inputAttack) unit->state = unit->facingRight ? unit->attackRight : unit->attackLeft;
+				Point curWalkDest = {};
+
+				if (unit->unitTarget) {
+					if (distanceBetween(unit->x, unit->y, unit->unitTarget->x, unit->unitTarget->y) <= 10) {
+						unit->state = unit->facingRight ? unit->attackRight : unit->attackLeft;
+					} else {
+						curWalkDest.setTo(unit->unitTarget->x, unit->unitTarget->y);
+					}
+				} else if (!unit->walkDest.isZero()) {
+					curWalkDest = unit->walkDest;
+				}
+
+				if (!curWalkDest.isZero() && unit->isIdle) {
+					Point moveVec = vectorBetween(unit->x, unit->y, curWalkDest.x, curWalkDest.y);
+					moveVec.normalize();
+					unit->moveAccel = moveVec;
+
+					if (distanceBetween(unit->x, unit->y, curWalkDest.x, curWalkDest.y) <= 10) unit->walkDest.setTo();
+
+					drawCircle(curWalkDest.x, curWalkDest.y, 4, 0xFF0000FF);
+				}
 
 				if ((unit->state == unit->attackRight || unit->state == unit->attackLeft) && getAnimFramesInState(unit) == unit->currentAnim->framesNum) {
 					unit->state = unit->facingRight ? unit->idleRight : unit->idleLeft;
 				}
-
 			}
 		}
 
@@ -513,39 +536,41 @@ void updateGame() {
 		}
 
 		{ /// Collision
-			int maxIntegrations = 5;
-			for (int integrateI = 0; integrateI < maxIntegrations; integrateI++) {
-				unit->x += unit->velo.x/maxIntegrations * game->timeScale;
-				unit->y += unit->velo.y/maxIntegrations * game->timeScale;
+			unit->x += unit->velo.x * game->timeScale;
+			unit->y += unit->velo.y * game->timeScale;
+			// int maxIntegrations = 5;
+			// for (int integrateI = 0; integrateI < maxIntegrations; integrateI++) {
+			// 	unit->x += unit->velo.x/maxIntegrations * game->timeScale;
+			// 	unit->y += unit->velo.y/maxIntegrations * game->timeScale;
 
-				for (int tileI = 0; tileI < game->tilesWide*game->tilesHigh; tileI++) {
-					if (game->collTiles[tileI] == 0) continue;
-					Rect tile;
-					tile.setTo((tileI % game->tilesWide) * game->tileSize, (tileI / game->tilesWide) * game->tileSize, game->tileSize, game->tileSize);
+			// 	for (int tileI = 0; tileI < game->tilesWide*game->tilesHigh; tileI++) {
+			// 		if (game->collTiles[tileI] == 0) continue;
+			// 		Rect tile;
+			// 		tile.setTo((tileI % game->tilesWide) * game->tileSize, (tileI / game->tilesWide) * game->tileSize, game->tileSize, game->tileSize);
 
-					float bump = 1.0/maxIntegrations;
+			// 		float bump = 1.0/maxIntegrations;
 
-					while (tile.containsPoint(unit->x - unit->collWidth/2, unit->y - unit->collHeight/2)) { // Left
-						unit->x += bump;
-						unit->velo.x = 0;
-					}
+			// 		while (tile.containsPoint(unit->x - unit->collWidth/2, unit->y - unit->collHeight/2)) { // Left
+			// 			unit->x += bump;
+			// 			unit->velo.x = 0;
+			// 		}
 
-					while (tile.containsPoint(unit->x + unit->collWidth/2, unit->y - unit->collHeight/2)) { // Right
-						unit->x -= bump;
-						unit->velo.x = 0;
-					}
+			// 		while (tile.containsPoint(unit->x + unit->collWidth/2, unit->y - unit->collHeight/2)) { // Right
+			// 			unit->x -= bump;
+			// 			unit->velo.x = 0;
+			// 		}
 
-					while (tile.containsPoint(unit->x, unit->y)) { // Bot
-						unit->y -= bump;
-						unit->velo.y = 0;
-					}
+			// 		while (tile.containsPoint(unit->x, unit->y)) { // Bot
+			// 			unit->y -= bump;
+			// 			unit->velo.y = 0;
+			// 		}
 
-					while (tile.containsPoint(unit->x, unit->y - unit->collHeight)) { // Top
-						unit->y += bump;
-						unit->velo.y = 0;
-					}
-				}
-			}
+			// 		while (tile.containsPoint(unit->x, unit->y - unit->collHeight)) { // Top
+			// 			unit->y += bump;
+			// 			unit->velo.y = 0;
+			// 		}
+			// 	}
+			// }
 		}
 
 		{ /// Post update
@@ -606,8 +631,6 @@ Unit *newUnit(UnitType type) {
 			memset(unit, 0, sizeof(Unit));
 			unit->exists = true;
 			unit->type = type;
-			unit->collWidth = 32;
-			unit->collHeight = 32;
 			unit->drag.setTo(0.2, 0.2);
 
 			if (type == UNIT_BK) {
@@ -632,6 +655,10 @@ Unit *newUnit(UnitType type) {
 
 			unit->state = unit->idleRight;
 			unit->currentAnim = game->anims[unit->state];
+
+			Frame *frame = &game->spriteFrames[unit->currentAnim->frames[getCurrentAnimFrame(unit)]];
+			unit->collWidth = frame->destWidth;
+			unit->collHeight = frame->destHeight;
 			return unit;
 		}
 	}
