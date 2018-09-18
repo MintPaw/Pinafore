@@ -1,6 +1,7 @@
 #define UNIT_LIMIT 256
 #define ANIM_NAME_LIMIT 256
 #define ANIM_FRAMES_LIMIT 256
+#define HITBOX_LIMIT 256
 
 struct Frame {
 	char *name;
@@ -96,6 +97,22 @@ struct Unit {
 	int memory[8];
 };
 
+struct Hitbox {
+	bool exists;
+	Unit *unit;
+	Rect localHitRect;
+	Rect hitRect;
+	Unit *ignore[UNIT_LIMIT];
+	int ignoreNum;
+
+	int frameCreated;
+	int framesPersists;
+
+	float veloX;
+	float veloY;
+	// bool stuns;
+};
+
 struct Game {
 	int frameCount;
 	float timeScale;
@@ -117,6 +134,8 @@ struct Game {
 	int tilesWide;
 	int tilesHigh;
 	int *collTiles;
+
+	Hitbox hitboxes[HITBOX_LIMIT];
 };
 
 Game *game = NULL;
@@ -125,6 +144,8 @@ void updateGame();
 
 Unit *newUnit(UnitType type);
 void drawFrame(Frame *frame, float xpos, float ypos, bool flipX);
+
+Hitbox *createHitbox(Unit *unit, float x=-1, float y=-1, float width=-1, float height=-1);
 
 int getRealTimeFramesInState(Unit *unit, int atFrame=-1);
 int getAnimFramesInState(Unit *unit, int atFrame=-1);
@@ -523,6 +544,27 @@ void updateGame() {
 			}
 		}
 
+		{ /// Update frame triggers
+			bool isFirstOfFrame = false;
+			if (getCurrentAnimFrame(unit, game->frameCount) != getCurrentAnimFrame(unit, game->frameCount-1)) isFirstOfFrame = true;
+
+			if (isFirstOfFrame && unit->state == STATE_BK_ATTACK_LEFT && getAnimFramesInState(unit) == 3) {
+				Hitbox *hitbox = createHitbox(unit);
+				hitbox->localHitRect.width = 50;
+				hitbox->localHitRect.height = 100;
+				hitbox->localHitRect.x = 0;
+				hitbox->localHitRect.y = unit->collHeight*0.65 - hitbox->localHitRect.height/2;
+			}
+
+			if (isFirstOfFrame && unit->state == STATE_BK_ATTACK_RIGHT && getAnimFramesInState(unit) == 3) {
+				Hitbox *hitbox = createHitbox(unit);
+				hitbox->localHitRect.width = 50;
+				hitbox->localHitRect.height = 100;
+				hitbox->localHitRect.x = unit->collWidth - hitbox->localHitRect.width;
+				hitbox->localHitRect.y = unit->collHeight*0.65 - hitbox->localHitRect.height/2;
+			}
+		}
+
 		{ /// Update physics
 			Point veloReduce = unit->velo;
 			veloReduce.multiply(&unit->drag);
@@ -592,6 +634,21 @@ void updateGame() {
 			// drawCircle(unit->x, unit->y, 4, 0xFF00FF00);
 			// drawRect(unit->x - unit->collWidth/2, unit->y - unit->collHeight, unit->collWidth, unit->collHeight, 0x88FF0000);
 		}
+	}
+
+	{ /// Update hitboxes
+		for (int i = 0; i < HITBOX_LIMIT; i++) {
+			Hitbox *hitbox = &game->hitboxes[i];
+			if (!hitbox->exists) continue;
+
+			hitbox->hitRect = hitbox->localHitRect;
+			hitbox->hitRect.x += hitbox->unit->x - hitbox->unit->collWidth/2;
+			hitbox->hitRect.y += hitbox->unit->y - hitbox->unit->collHeight;
+
+			if (game->frameCount - hitbox->frameCreated > hitbox->framesPersists) hitbox->exists = false;
+
+			drawRect(hitbox->hitRect.x, hitbox->hitRect.y, hitbox->hitRect.width, hitbox->hitRect.height, 0x88FF0000);
+		};
 	}
 
 	{ /// Update camera
@@ -664,6 +721,41 @@ Unit *newUnit(UnitType type) {
 	}
 
 	return NULL;
+}
+
+Hitbox *createHitbox(Unit *unit, float x, float y, float width, float height) {
+	Hitbox *hitbox = NULL;
+
+	if (x == -1 && y == -1 && width == -1 && height == -1) {
+		x = unit->x - unit->collWidth/2;
+		y = unit->y - unit->collHeight;
+		width = unit->collWidth;
+		height = unit->collHeight;
+	}
+
+	for (int i = 0; i < HITBOX_LIMIT; i++) {
+		Hitbox *curHitbox = &game->hitboxes[i];
+		if (!curHitbox->exists) {
+			hitbox = curHitbox;
+			break;
+		}
+	}
+
+	memset(hitbox, 0, sizeof(Hitbox));
+	hitbox->exists = true;
+	hitbox->frameCreated = game->frameCount;
+	hitbox->framesPersists = 5;
+	hitbox->unit = unit;
+	hitbox->localHitRect.x = x;
+	hitbox->localHitRect.y = y;
+	hitbox->localHitRect.width = width;
+	hitbox->localHitRect.height = height;
+
+	hitbox->hitRect.setTo();
+
+	hitbox->ignore[hitbox->ignoreNum++] = unit;
+
+	return hitbox;
 }
 
 int getRealTimeFramesInState(Unit *unit, int atFrame) {
