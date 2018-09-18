@@ -95,6 +95,9 @@ struct Unit {
 	Point drag;
 
 	int memory[8];
+
+	float hp;
+	float maxHp;
 };
 
 struct Hitbox {
@@ -108,9 +111,7 @@ struct Hitbox {
 	int frameCreated;
 	int framesPersists;
 
-	float veloX;
-	float veloY;
-	// bool stuns;
+	Point velo;
 };
 
 struct Game {
@@ -146,6 +147,7 @@ Unit *newUnit(UnitType type);
 void drawFrame(Frame *frame, float xpos, float ypos, bool flipX);
 
 Hitbox *createHitbox(Unit *unit, float x=-1, float y=-1, float width=-1, float height=-1);
+Rect getUnitRect(Unit *unit);
 
 int getRealTimeFramesInState(Unit *unit, int atFrame=-1);
 int getAnimFramesInState(Unit *unit, int atFrame=-1);
@@ -432,7 +434,8 @@ void updateGame() {
 						Unit *other = activeUnits[otherI];
 						if (other == unit) continue;
 
-						if (pointInRect(platform->mouseX, platform->mouseY, other->x - other->collWidth/2, other->y - other->collHeight, other->collWidth, other->collHeight)) {
+						Rect otherRect = getUnitRect(other);
+						if (pointInRect(platform->mouseX, platform->mouseY, otherRect.x, otherRect.y, otherRect.width, otherRect.height)) {
 							unit->unitTarget = other;
 							break;
 						}
@@ -445,6 +448,7 @@ void updateGame() {
 				}
 
 				Point curWalkDest = {};
+				if (unit->unitTarget && !unit->unitTarget->exists) unit->unitTarget = NULL;
 
 				if (unit->unitTarget) {
 					if (distanceBetween(unit->x, unit->y, unit->unitTarget->x, unit->unitTarget->y) <= 10) {
@@ -554,6 +558,7 @@ void updateGame() {
 				hitbox->localHitRect.height = 100;
 				hitbox->localHitRect.x = 0;
 				hitbox->localHitRect.y = unit->collHeight*0.65 - hitbox->localHitRect.height/2;
+				hitbox->velo.x = -5;
 			}
 
 			if (isFirstOfFrame && unit->state == STATE_BK_ATTACK_RIGHT && getAnimFramesInState(unit) == 3) {
@@ -562,6 +567,7 @@ void updateGame() {
 				hitbox->localHitRect.height = 100;
 				hitbox->localHitRect.x = unit->collWidth - hitbox->localHitRect.width;
 				hitbox->localHitRect.y = unit->collHeight*0.65 - hitbox->localHitRect.height/2;
+				hitbox->velo.x = 5;
 			}
 		}
 
@@ -615,6 +621,35 @@ void updateGame() {
 			// }
 		}
 
+		{ /// Damage
+			for (int hitboxI = 0; hitboxI < HITBOX_LIMIT; hitboxI++) {
+				// if (unit->immune) break;
+
+				Hitbox *hitbox = &game->hitboxes[hitboxI];
+				if (!hitbox->exists) continue;
+
+				bool ignoreHit = false;
+				for (int hitIgnoreI = 0; hitIgnoreI < hitbox->ignoreNum; hitIgnoreI++) {
+					if (hitbox->ignore[hitIgnoreI] == unit) {
+						ignoreHit = true;
+						break;
+					}
+				}
+				if (ignoreHit) break;
+
+				Rect unitRect = getUnitRect(unit);
+				if (hitbox->hitRect.intersects(&unitRect)) {
+					hitbox->ignore[hitbox->ignoreNum++] = unit;
+
+					unit->hp -= 10;
+
+					unit->velo = hitbox->velo;
+				}
+			}
+
+			if (unit->hp <= 0) unit->exists = false;
+		}
+
 		{ /// Post update
 			if (unit->prevState != unit->state) {
 				unit->frameAnimStarted = game->frameCount;
@@ -624,6 +659,16 @@ void updateGame() {
 
 		{ /// Rendering
 			unit->currentAnim = game->anims[unit->state];
+			/// Hp
+			Rect unitRect = getUnitRect(unit);
+			int hpMaxWidth = 40;
+			int hpWidth = hpMaxWidth * (float)unit->hp/(float)unit->maxHp;
+			int hpHeight = 4;
+			int hpX = unitRect.x + unitRect.width/2 - hpMaxWidth/2;
+			int hpY = unitRect.y + unitRect.height + 5;
+			drawRect(hpX-1, hpY-1, hpMaxWidth+2, hpHeight+2, 0xFF000000);
+			drawRect(hpX, hpY, hpWidth, hpHeight, 0xFF00FF00);
+
 			if (unit->currentAnim) { /// Draw frame
 				int framesIn = getRealTimeFramesInState(unit);
 				Frame *frame = &game->spriteFrames[unit->currentAnim->frames[getCurrentAnimFrame(unit)]];
@@ -632,7 +677,9 @@ void updateGame() {
 
 			/// Debug
 			// drawCircle(unit->x, unit->y, 4, 0xFF00FF00);
-			// drawRect(unit->x - unit->collWidth/2, unit->y - unit->collHeight, unit->collWidth, unit->collHeight, 0x88FF0000);
+
+			// Rect unitRect = getUnitRect(unit);
+			// drawRect(unitRect.x, unitRect.y, unitRect.width, unitRect.height, 0x88FF0000);
 		}
 	}
 
@@ -641,9 +688,10 @@ void updateGame() {
 			Hitbox *hitbox = &game->hitboxes[i];
 			if (!hitbox->exists) continue;
 
+			Rect unitRect = getUnitRect(hitbox->unit);
 			hitbox->hitRect = hitbox->localHitRect;
-			hitbox->hitRect.x += hitbox->unit->x - hitbox->unit->collWidth/2;
-			hitbox->hitRect.y += hitbox->unit->y - hitbox->unit->collHeight;
+			hitbox->hitRect.x += unitRect.x;
+			hitbox->hitRect.y += unitRect.y;
 
 			if (game->frameCount - hitbox->frameCreated > hitbox->framesPersists) hitbox->exists = false;
 
@@ -689,6 +737,7 @@ Unit *newUnit(UnitType type) {
 			unit->exists = true;
 			unit->type = type;
 			unit->drag.setTo(0.2, 0.2);
+			unit->hp = unit->maxHp = 100;
 
 			if (type == UNIT_BK) {
 				unit->idleLeft = STATE_BK_IDLE_LEFT;
@@ -727,10 +776,11 @@ Hitbox *createHitbox(Unit *unit, float x, float y, float width, float height) {
 	Hitbox *hitbox = NULL;
 
 	if (x == -1 && y == -1 && width == -1 && height == -1) {
-		x = unit->x - unit->collWidth/2;
-		y = unit->y - unit->collHeight;
-		width = unit->collWidth;
-		height = unit->collHeight;
+		Rect unitRect = getUnitRect(unit);
+		x = unitRect.x;
+		y = unitRect.y;
+		width = unitRect.width;
+		height = unitRect.height;
 	}
 
 	for (int i = 0; i < HITBOX_LIMIT; i++) {
@@ -756,6 +806,11 @@ Hitbox *createHitbox(Unit *unit, float x, float y, float width, float height) {
 	hitbox->ignore[hitbox->ignoreNum++] = unit;
 
 	return hitbox;
+}
+
+Rect getUnitRect(Unit *unit) {
+	Rect rect = {unit->x - unit->collWidth/2, unit->y - unit->collHeight, unit->collWidth, unit->collHeight};
+	return rect;
 }
 
 int getRealTimeFramesInState(Unit *unit, int atFrame) {
