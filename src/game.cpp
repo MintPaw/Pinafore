@@ -60,7 +60,8 @@ enum State {
 struct Unit {
 	bool exists;
 
-	bool isPlayer;
+	bool isSelected;
+	bool isAi;
 	bool isIdle;
 
 	UnitType type;
@@ -120,7 +121,6 @@ struct Game {
 	float timeScale;
 
 	Unit units[UNIT_LIMIT];
-	Unit *player;
 
 	Frame *spriteFrames;
 	int spriteFramesNum;
@@ -128,6 +128,7 @@ struct Game {
 	Texture *sprites;
 
 	Animation *anims[STATE_FINAL];
+	Unit *selectableUnits[4];
 
 	tinytiled_map_t *tiledMap; 
 	Texture *mapTexture;
@@ -145,7 +146,8 @@ Game *game = NULL;
 void updateGame();
 
 Unit *newUnit(UnitType type);
-void drawFrame(Frame *frame, float xpos, float ypos, bool flipX);
+Frame *getFrame(const char *frameName);
+void drawFrame(Frame *frame, float xpos, float ypos, RenderProps *extraProps=NULL);
 
 Hitbox *createHitbox(Unit *unit, float x=-1, float y=-1, float width=-1, float height=-1);
 Rect getUnitRect(Unit *unit);
@@ -220,10 +222,7 @@ void updateGame() {
 					nameEnd = strrchr(frame->name, '0'+endNum);
 					if (nameEnd) break;
 				}
-				if (!nameEnd) {
-					printf("No name end found on name %s\n", frame->name);
-					Assert(0);
-				}
+				if (!nameEnd) continue;
 				int nameLen = nameEnd - frame->name;
 
 				char curName[ANIM_NAME_LIMIT];
@@ -254,6 +253,7 @@ void updateGame() {
 						nameEnd = strrchr(frame->name, '0'+endNum);
 						if (nameEnd) break;
 					}
+					if (!nameEnd) continue;
 
 					int nameLen = nameEnd - frame->name;
 
@@ -369,19 +369,32 @@ void updateGame() {
 		}
 
 		/// Setup player
-		game->player = newUnit(UNIT_BK);
-		game->player->isPlayer = true;
-		game->player->x = platform->windowWidth/2;
-		game->player->y = platform->windowHeight/2;
+		Unit *p1 = newUnit(UNIT_BK);
+		p1->x = platform->windowWidth/2 - 200;
+		p1->y = platform->windowHeight/2;
+
+		Unit *p2 = newUnit(UNIT_BK);
+		p2->x = platform->windowWidth/2;
+		p2->y = platform->windowHeight/2;
+
+		Unit *p3 = newUnit(UNIT_BK);
+		p3->x = platform->windowWidth/2 + 200;
+		p3->y = platform->windowHeight/2;
+
+		game->selectableUnits[0] = p1;
+		game->selectableUnits[1] = p2;
+		game->selectableUnits[2] = p3;
 
 		/// Setup enemies
 		Unit *enemy1 = newUnit(UNIT_RM);
 		enemy1->x = 200;
 		enemy1->y = 200;
+		enemy1->isAi = true;
 
 		Unit *enemy2 = newUnit(UNIT_RM);
 		enemy2->x = platform->windowWidth - 200;
 		enemy2->y = platform->windowHeight - 200;
+		enemy2->isAi = true;
 	}
 
 	clearRenderer();
@@ -395,6 +408,10 @@ void updateGame() {
 	bool inputDown = false;
 	// bool inputJump = false;
 	bool inputAttack = false;
+	bool inputUnit1 = false;
+	bool inputUnit2 = false;
+	bool inputUnit3 = false;
+	bool inputUnit4 = false;
 	{ /// Update inputs
 		if (keyPressed(KEY_LEFT) || keyPressed('A')) inputLeft = true;
 		if (keyPressed(KEY_RIGHT) || keyPressed('D')) inputRight = true;
@@ -402,22 +419,45 @@ void updateGame() {
 		if (keyPressed(KEY_DOWN) || keyPressed('S')) inputDown = true;
 		// if (keyJustPressed('?')) inputJump = true;
 		if (keyJustPressed(' ')) inputAttack = true;
+		if (keyJustPressed('Q')) inputUnit1 = true;
+		if (keyJustPressed('W')) inputUnit2 = true;
+		if (keyJustPressed('E')) inputUnit3 = true;
+		if (keyJustPressed('R')) inputUnit4 = true;
 
 		if (keyJustPressed('-')) game->timeScale /= 2.0;
 		if (keyJustPressed('=')) game->timeScale *= 2.0;
 		if (keyJustPressed(KEY_BACKTICK)) game->debugDraw = !game->debugDraw;
 	}
 
-	/// Sort units
+	
 	Unit *activeUnits[UNIT_LIMIT];
 	int activeUnitsNum = 0;
+	{ /// Sort units
+		for (int i = 0; i < UNIT_LIMIT; i++) {
+			Unit *unit = &game->units[i];
+			if (unit->exists) activeUnits[activeUnitsNum++] = unit;
+		}
 
-	for (int i = 0; i < UNIT_LIMIT; i++) {
-		Unit *unit = &game->units[i];
-		if (unit->exists) activeUnits[activeUnitsNum++] = unit;
+		qsort(activeUnits, activeUnitsNum, sizeof(Unit *), qsortActiveUnits);
 	}
 
-	qsort(activeUnits, activeUnitsNum, sizeof(Unit *), qsortActiveUnits);
+	{ /// Unit selection
+		Unit *newSelectedUnit = NULL;
+		if (inputUnit1) newSelectedUnit = game->selectableUnits[0];
+		if (inputUnit2) newSelectedUnit = game->selectableUnits[1];
+		if (inputUnit3) newSelectedUnit = game->selectableUnits[2];
+		if (inputUnit4) newSelectedUnit = game->selectableUnits[3];
+
+		if (newSelectedUnit) {
+			for (int i = 0; i < activeUnitsNum; i++) {
+				Unit *unit = activeUnits[i];
+				if (!unit->exists) continue;
+				unit->isSelected = false;
+			}
+
+			newSelectedUnit->isSelected = true;
+		}
+	}
 
 	/// Update units
 	for (int i = 0; i < activeUnitsNum; i++) {
@@ -427,7 +467,7 @@ void updateGame() {
 		unit->moveAccel.setTo();
 
 		{ /// Player control
-			if (unit->isPlayer) {
+			if (unit->isSelected) {
 				if (platform->mouseJustDown) {
 					unit->unitTarget = NULL;
 					unit->walkDest.setTo();
@@ -448,38 +488,40 @@ void updateGame() {
 						unit->walkDest.y = platform->mouseY;
 					}
 				}
+			}
+		}
 
-				Point curWalkDest = {};
-				if (unit->unitTarget && !unit->unitTarget->exists) unit->unitTarget = NULL;
+		{ /// Target actions
+			Point curWalkDest = {};
+			if (unit->unitTarget && !unit->unitTarget->exists) unit->unitTarget = NULL;
 
-				if (unit->unitTarget) {
-					if (distanceBetween(unit->x, unit->y, unit->unitTarget->x, unit->unitTarget->y) <= 10) {
-						unit->state = unit->facingRight ? unit->attackRight : unit->attackLeft;
-					} else {
-						curWalkDest.setTo(unit->unitTarget->x, unit->unitTarget->y);
-					}
-				} else if (!unit->walkDest.isZero()) {
-					curWalkDest = unit->walkDest;
+			if (unit->unitTarget) {
+				if (distanceBetween(unit->x, unit->y, unit->unitTarget->x, unit->unitTarget->y) <= 10) {
+					unit->state = unit->facingRight ? unit->attackRight : unit->attackLeft;
+				} else {
+					curWalkDest.setTo(unit->unitTarget->x, unit->unitTarget->y);
 				}
+			} else if (!unit->walkDest.isZero()) {
+				curWalkDest = unit->walkDest;
+			}
 
-				if (!curWalkDest.isZero() && unit->isIdle) {
-					Point moveVec = vectorBetween(unit->x, unit->y, curWalkDest.x, curWalkDest.y);
-					moveVec.normalize();
-					unit->moveAccel = moveVec;
+			if (!curWalkDest.isZero() && unit->isIdle) {
+				Point moveVec = vectorBetween(unit->x, unit->y, curWalkDest.x, curWalkDest.y);
+				moveVec.normalize();
+				unit->moveAccel = moveVec;
 
-					if (distanceBetween(unit->x, unit->y, curWalkDest.x, curWalkDest.y) <= 10) unit->walkDest.setTo();
+				if (distanceBetween(unit->x, unit->y, curWalkDest.x, curWalkDest.y) <= 10) unit->walkDest.setTo();
 
-					if (game->debugDraw) drawCircle(curWalkDest.x, curWalkDest.y, 4, 0xFF0000FF);
-				}
+				if (game->debugDraw) drawCircle(curWalkDest.x, curWalkDest.y, 4, 0xFF0000FF);
+			}
 
-				if ((unit->state == unit->attackRight || unit->state == unit->attackLeft) && getAnimFramesInState(unit) == unit->currentAnim->framesNum) {
-					unit->state = unit->facingRight ? unit->idleRight : unit->idleLeft;
-				}
+			if ((unit->state == unit->attackRight || unit->state == unit->attackLeft) && getAnimFramesInState(unit) == unit->currentAnim->framesNum) {
+				unit->state = unit->facingRight ? unit->idleRight : unit->idleLeft;
 			}
 		}
 
 		{ /// AI control
-			if (!unit->isPlayer) {
+			if (unit->isAi) {
 				int moveToX = unit->memory[0];
 				int moveToY = unit->memory[1];
 				int waitFrames = unit->memory[2];
@@ -674,7 +716,21 @@ void updateGame() {
 			if (unit->currentAnim) { /// Draw frame
 				int framesIn = getRealTimeFramesInState(unit);
 				Frame *frame = &game->spriteFrames[unit->currentAnim->frames[getCurrentAnimFrame(unit)]];
-				drawFrame(frame, unit->x, unit->y, false);
+
+				RenderProps props = newRenderProps();
+				if (unit == game->selectableUnits[0]) props.tint = 0x00000000;
+				if (unit == game->selectableUnits[1]) props.tint = 0x88FF9900;
+				if (unit == game->selectableUnits[2]) props.tint = 0x8800FF00;
+				drawFrame(frame, unit->x, unit->y, &props);
+			}
+
+			if (unit->isSelected) {
+				Frame *frame = getFrame("arrow");
+				RenderProps props = newRenderProps();
+				props.pivotX = frame->destWidth/2;
+				props.pivotY = frame->destHeight/2;
+				props.rotation = -90;
+				drawFrame(frame, unit->x, unit->y + frame->destHeight, &props);
 			}
 
 			/// Debug
@@ -717,8 +773,20 @@ void updateGame() {
 	game->frameCount++;
 }
 
-void drawFrame(Frame *frame, float xpos, float ypos, bool flipX) {
+Frame *getFrame(const char *frameName) {
+	for (int i = 0; i < game->spriteFramesNum; i++) {
+		Frame *frame = &game->spriteFrames[i];
+		if (streq(frame->name, frameName)) return frame;
+	}
+
+	printf("Couldn't find frame %s\n", frameName);
+	return NULL;
+}
+
+void drawFrame(Frame *frame, float xpos, float ypos, RenderProps *extraProps) {
 	RenderProps props = newRenderProps();
+	if (extraProps) props = *extraProps;
+
 	props.srcX = frame->srcX;
 	props.srcY = frame->srcY;
 	props.srcWidth = frame->srcWidth;
@@ -729,7 +797,6 @@ void drawFrame(Frame *frame, float xpos, float ypos, bool flipX) {
 	props.pivotY = frame->destHeight/2;
 	props.x = xpos - frame->destWidth/2;
 	props.y = ypos - frame->destHeight;
-	props.scaleX = flipX ? -1 : 1;
 	drawTexture(game->sprites, &props);
 }
 
