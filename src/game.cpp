@@ -128,6 +128,8 @@ struct Game {
 	Texture *sprites;
 
 	Animation *anims[STATE_FINAL];
+
+	Unit *primaryUnit;
 	Unit *selectableUnits[4];
 
 	tinytiled_map_t *tiledMap; 
@@ -381,9 +383,11 @@ void updateGame() {
 		p3->x = platform->windowWidth/2 + 200;
 		p3->y = platform->windowHeight/2;
 
+		game->primaryUnit = p2;
 		game->selectableUnits[0] = p1;
-		game->selectableUnits[1] = p2;
-		game->selectableUnits[2] = p3;
+		game->selectableUnits[1] = p3;
+
+		game->primaryUnit->isSelected = true;
 
 		/// Setup enemies
 		Unit *enemy1 = newUnit(UNIT_RM);
@@ -429,7 +433,6 @@ void updateGame() {
 		if (keyJustPressed(KEY_BACKTICK)) game->debugDraw = !game->debugDraw;
 	}
 
-	
 	Unit *activeUnits[UNIT_LIMIT];
 	int activeUnitsNum = 0;
 	{ /// Sort units
@@ -449,17 +452,23 @@ void updateGame() {
 		if (inputUnit4) newSelectedUnit = game->selectableUnits[3];
 
 		if (newSelectedUnit) {
-			for (int i = 0; i < activeUnitsNum; i++) {
-				Unit *unit = activeUnits[i];
-				if (!unit->exists) continue;
-				unit->isSelected = false;
-			}
+			if (newSelectedUnit->isSelected) {
+				newSelectedUnit->isSelected = false;
+				game->primaryUnit->isSelected = true;
+			} else {
+				for (int i = 0; i < activeUnitsNum; i++) {
+					Unit *unit = activeUnits[i];
+					if (!unit->exists) continue;
+					unit->isSelected = false;
+				}
 
-			newSelectedUnit->isSelected = true;
+				newSelectedUnit->isSelected = true;
+			}
 		}
 	}
 
 	/// Update units
+	bool reselectPrimaryUnit = false;
 	for (int i = 0; i < activeUnitsNum; i++) {
 		Unit *unit = activeUnits[i];
 		if (!unit->exists) continue;
@@ -486,6 +495,11 @@ void updateGame() {
 					if (!unit->unitTarget) {
 						unit->walkDest.x = platform->mouseX;
 						unit->walkDest.y = platform->mouseY;
+					}
+
+					if (unit != game->primaryUnit) {
+						unit->isSelected = false;
+						reselectPrimaryUnit = true;
 					}
 				}
 			}
@@ -742,6 +756,7 @@ void updateGame() {
 			}
 		}
 	}
+	if (reselectPrimaryUnit) game->primaryUnit->isSelected = true;
 
 	{ /// Update hitboxes
 		for (int i = 0; i < HITBOX_LIMIT; i++) {
