@@ -36,11 +36,21 @@ struct Frame {
 	int absFrame;
 };
 
+enum CommandType {
+	COMMAND_MOVE,
+};
+
+struct Command {
+	bool exists;
+	CommandType type;
+	Vec2 movePos;
+};
+
 enum UnitType {
-	UNIT_NULL=0,
 	UNIT_BLUE_KNIGHT,
 };
 
+#define QUEUE_LIMIT 256
 struct Unit {
 	bool exists;
 
@@ -48,8 +58,11 @@ struct Unit {
 	float y;
 	UnitType type;
 	bool facingLeft;
-
 	int keyToSelect;
+
+	Command queue[QUEUE_LIMIT];
+	int queueNum;
+	int queueIndex;
 };
 
 #define UNIT_LIMIT 1024
@@ -217,7 +230,37 @@ void updateGame() {
 			ImGui::SetNextWindowPos(ImVec2(unit->x, unit->y + 100), ImGuiCond_Always, ImVec2(0.5, 0));
 			ImGui::Begin("Selected", NULL, ImGuiWindowFlags_AlwaysAutoResize);
 			ImGui::Text("This unit is selected");
+			if (unit->queueNum == 0) ImGui::Text("No commands");
+			else ImGui::Text("Executing command %d/%d", unit->queueIndex+1, unit->queueNum);
 			ImGui::End();
+
+			if (platform->mouseJustDown) {
+				unit->queueNum = 0;
+
+				Command *command = &unit->queue[unit->queueNum++];
+				memset(command, 0, sizeof(Command));
+				command->exists = true;
+				command->type = COMMAND_MOVE;
+				command->movePos.setTo(platform->mouseX, platform->mouseY);
+			}
+		}
+
+		if (unit->queueNum > 0) {
+			if (unit->queueIndex >= unit->queueNum) {
+				unit->queueIndex = unit->queueNum = 0;
+			} else {
+				Command *command = &unit->queue[unit->queueIndex];
+				if (command->type == COMMAND_MOVE) {
+					float speed = 3;
+					if (distanceBetween(unit->x, unit->y, command->movePos.x, command->movePos.y) <= speed * 2) {
+						unit->queueIndex++;
+					} else {
+						float angle = radsBetween(unit->x, unit->y, command->movePos.x, command->movePos.y);
+						unit->x += cos(angle) * speed;
+						unit->y += sin(angle) * speed;
+					}
+				}
+			}
 		}
 
 		if (unit->type == UNIT_BLUE_KNIGHT) {
