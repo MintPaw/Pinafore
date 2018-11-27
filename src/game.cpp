@@ -89,6 +89,7 @@ struct Game {
 	ImFont *defaultGuiFont;
 	ImFont *smallGuiFont;
 
+	bool showingDebug;
 	Unit units[UNIT_LIMIT];
 	int currentLevel;
 	Unit *selectedUnit;
@@ -159,6 +160,8 @@ void updateGame() {
 		{ /// Setup misc
 			initEmitters(256);
 
+			game->showingDebug = true;
+
 			watchFile("assets/sprites.png");
 			watchFile("assets/sprites.spr");
 
@@ -201,6 +204,7 @@ void updateGame() {
 		if (keyPressed(KEY_DOWN)) inputDown = true;
 		// if (keyJustPressed('A'))  playSound(game->metro);
 		if (keyPressed(KEY_CTRL) && keyJustPressed(KEY_BACKTICK)) showDemo = !showDemo;
+		if (!keyPressed(KEY_CTRL) && keyJustPressed(KEY_BACKTICK)) game->showingDebug = !game->showingDebug;
 	}
 
 	if (showDemo) ImGui::ShowDemoWindow(&showDemo);
@@ -230,16 +234,20 @@ void updateGame() {
 			game->selectedUnit = unit;
 		}
 
-		if (game->selectedUnit == unit) {
+		if (game->showingDebug) {
 			ImGui::SetNextWindowPos(ImVec2(unit->x, unit->y + 100), ImGuiCond_Always, ImVec2(0.5, 0));
-			ImGui::Begin("Selected", NULL, ImGuiWindowFlags_AlwaysAutoResize);
-			ImGui::Text("This unit is selected");
+			char windowName[256];
+			sprintf(windowName, "Unit %d", i);
+			ImGui::Begin(windowName, NULL, ImGuiWindowFlags_AlwaysAutoResize);
+			if (game->selectedUnit == unit) ImGui::Text("This unit is selected");
 			if (unit->queueNum == 0) ImGui::Text("Idle for %0.1fs", unit->timeIdle);
 			else ImGui::Text("Executing command %d/%d for %0.1fs", unit->queueIndex+1, unit->queueNum, unit->timeOnCommand);
 			ImGui::End();
+		}
 
+		if (game->selectedUnit == unit) {
 			if (platform->mouseJustDown) {
-				unit->queueNum = 0;
+				if (!keyPressed(KEY_SHIFT)) unit->queueNum = 0;
 
 				Command *command = &unit->queue[unit->queueNum++];
 				memset(command, 0, sizeof(Command));
@@ -482,7 +490,6 @@ void loadAnimations() {
 
 		for (int i = 0; i < tempAnimNamesNum; i++) {
 			Animation *anim = &game->spriteAnims[i];
-			printf("Anim name: %s\n", anim->name);
 
 			if (streq(anim->name, "blueKnight/BKIdleLL")) {
 				// anim->speed = 0.2;
