@@ -272,6 +272,8 @@ void updateGame() {
 						float angle = radsBetween(unit->x, unit->y, command->movePos.x, command->movePos.y);
 						unit->x += cos(angle) * speed;
 						unit->y += sin(angle) * speed;
+
+						unit->facingLeft = unit->x > command->movePos.x;
 					}
 				}
 			}
@@ -283,12 +285,14 @@ void updateGame() {
 		if (unit->type == UNIT_BLUE_KNIGHT) {
 			Animation *anim = NULL;
 
+			float animTime = 0;
 			if (unit->queueNum == 0) {
 				if (unit->facingLeft) {
 					anim = game->anims[STATE_BK_IDLE_LEFT];
 				} else {
 					anim = game->anims[STATE_BK_IDLE_RIGHT];
 				}
+				animTime = unit->timeIdle;
 			} else {
 				Command *command = &unit->queue[unit->queueIndex];
 				if (command->type == COMMAND_MOVE) {
@@ -298,9 +302,11 @@ void updateGame() {
 						anim = game->anims[STATE_BK_WALK_RIGHT];
 					}
 				}
+
+				animTime = unit->timeOnCommand;
 			}
 
-			int framesIn = getAnimFrameAtSecond(anim, 0);
+			int framesIn = getAnimFrameAtSecond(anim, animTime);
 			Frame *frame = &game->spriteFrames[anim->frames[framesIn]];
 
 			RenderProps props = newRenderProps();
