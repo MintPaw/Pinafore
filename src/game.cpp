@@ -102,6 +102,7 @@ struct Game {
 	Texture *finalRT;
 	Texture *gameRT;
 	Texture *tempRT;
+	Texture *debugRT;
 
 	Sound *metro;
 };
@@ -146,6 +147,7 @@ void updateGame() {
 		game->gameRT = uploadTexture(NULL, platform->windowWidth, platform->windowHeight);
 		game->finalRT = uploadTexture(NULL, platform->windowWidth, platform->windowHeight);
 		game->tempRT = uploadTexture(NULL, platform->windowWidth, platform->windowHeight);
+		game->debugRT = uploadTexture(NULL, platform->windowWidth, platform->windowHeight);
 
 		loadAnimations();
 
@@ -264,11 +266,36 @@ void updateGame() {
 			if (platform->mouseJustDown) {
 				if (!keyPressed(KEY_SHIFT)) unit->queueNum = 0;
 
-				Command *command = &unit->queue[unit->queueNum++];
-				memset(command, 0, sizeof(Command));
-				command->exists = true;
-				command->type = COMMAND_MOVE;
-				command->movePos.setTo(platform->mouseX, platform->mouseY);
+				Unit *clickedUnit = NULL;
+				for (int i = 0; i < UNIT_LIMIT; i++) {
+					Unit *otherUnit = &game->units[i];
+					if (!otherUnit->exists) continue;
+
+					Vec2 unitSize;
+					if (otherUnit->type == UNIT_BLUE_KNIGHT) unitSize.setTo(70, 100);
+					if (otherUnit->type == UNIT_RED_MINOTAUR) unitSize.setTo(90, 160);
+
+					Rect rect = {-unitSize.x/2, -unitSize.y/2, unitSize.x, unitSize.y};
+					rect.x += otherUnit->x;
+					rect.y += otherUnit->y;
+
+					if (rect.contains(platform->mouseX, platform->mouseY)) {
+						clickedUnit = otherUnit;
+					}
+
+					// pushTargetTexture(game->debugRT);
+					// drawRect(rect.x, rect.y, rect.width, rect.height, 0x88FF0000);
+					// popTargetTexture();
+				}
+
+				if (clickedUnit) {
+				} else {
+					Command *command = &unit->queue[unit->queueNum++];
+					memset(command, 0, sizeof(Command));
+					command->exists = true;
+					command->type = COMMAND_MOVE;
+					command->movePos.setTo(platform->mouseX, platform->mouseY);
+				}
 			}
 		}
 
@@ -361,6 +388,11 @@ void updateGame() {
 
 	RenderProps gameProps = newRenderProps();
 	drawTexture(game->gameRT, &gameProps);
+
+	if (game->showingDebug) {
+		RenderProps props = newRenderProps();
+		drawTexture(game->debugRT, &props);
+	}
 
 	popTargetTexture();
 
