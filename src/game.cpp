@@ -113,6 +113,7 @@ struct Game {
 	ImFont *defaultGuiFont;
 	ImFont *smallGuiFont;
 
+	float timeScale;
 	bool showingDebug;
 	Unit units[UNIT_LIMIT];
 	int currentLevel;
@@ -186,6 +187,7 @@ void updateGame() {
 		{ /// Setup misc
 			initEmitters(256);
 
+			game->timeScale = 1;
 			game->showingDebug = true;
 
 			watchFile("assets/sprites.png");
@@ -213,7 +215,7 @@ void updateGame() {
 	getNanoTime(&startTime);
 
 	float secondPhase = fabs(sin(game->secondCount*3.14159));
-	float elapsed = 1/60.0;
+	float elapsed = 1/60.0 * game->timeScale;
 
 	pushTargetTexture(game->gameRT);
 	clearRenderer();
@@ -235,7 +237,10 @@ void updateGame() {
 
 	if (showDemo) ImGui::ShowDemoWindow(&showDemo);
 
-	// ImGui::Begin("Dev menu", NULL, ImGuiWindowFlags_None);
+	ImGui::Begin("Dev menu", NULL, ImGuiWindowFlags_AlwaysAutoResize);
+	ImGui::SliderFloat("Game Speed", &game->timeScale, 0, 2);
+	ImGui::End();
+
 	if (game->currentLevel == 0) {
 		game->currentLevel = 1; 
 
@@ -278,6 +283,7 @@ void updateGame() {
 			sprintf(windowName, "Unit %d", i);
 			ImGui::Begin(windowName, NULL, ImGuiWindowFlags_AlwaysAutoResize);
 			if (game->selectedUnit == unit) ImGui::Text("This unit is selected");
+			else if (unit->keyToSelect) ImGui::Text("Press %c to select", unit->keyToSelect);
 			if (unit->queueNum == 0) ImGui::Text("Idle for %0.1fs", unit->timeIdle);
 			else ImGui::Text("Executing command %d/%d for %0.1fs", unit->queueIndex+1, unit->queueNum, unit->timeOnCommand);
 
@@ -352,8 +358,8 @@ void updateGame() {
 						unit->timeOnCommand = 0;
 					} else {
 						float angle = radsBetween(unit->x, unit->y, command->movePos.x, command->movePos.y);
-						unit->x += cos(angle) * moveSpeed;
-						unit->y += sin(angle) * moveSpeed;
+						unit->x += cos(angle) * moveSpeed * game->timeScale;
+						unit->y += sin(angle) * moveSpeed * game->timeScale;
 
 						unit->facingLeft = unit->x > command->movePos.x;
 					}
@@ -366,8 +372,8 @@ void updateGame() {
 					} else {
 						unit->timeAttacking = 0;
 						float angle = radsBetween(unit->x, unit->y, target->x, target->y);
-						unit->x += cos(angle) * moveSpeed;
-						unit->y += sin(angle) * moveSpeed;
+						unit->x += cos(angle) * moveSpeed * game->timeScale;
+						unit->y += sin(angle) * moveSpeed * game->timeScale;
 					}
 				}
 			}
