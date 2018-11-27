@@ -68,6 +68,11 @@ enum UnitType {
 	UNIT_RED_MINOTAUR,
 };
 
+enum AiType {
+	AI_NULL=0,
+	AI_WALK_RANDOMLY,
+};
+
 #define QUEUE_LIMIT 256
 struct Unit {
 	bool exists;
@@ -84,6 +89,8 @@ struct Unit {
 	float timeOnCommand;
 	float timeIdle;
 	float timeAttacking;
+
+	AiType aiType;
 };
 
 #define UNIT_LIMIT 1024
@@ -248,11 +255,13 @@ void updateGame() {
 		enemyUnit1->type = UNIT_RED_MINOTAUR;
 		enemyUnit1->x = 1000;
 		enemyUnit1->y = 400;
+		enemyUnit1->aiType = AI_NULL;
 
 		Unit *enemyUnit2 = newUnit();
 		enemyUnit2->type = UNIT_RED_MINOTAUR;
 		enemyUnit2->x = 1100;
 		enemyUnit2->y = 400;
+		enemyUnit1->aiType = AI_WALK_RANDOMLY;
 	}
 
 	for (int i = 0; i < UNIT_LIMIT; i++) {
@@ -271,6 +280,10 @@ void updateGame() {
 			if (game->selectedUnit == unit) ImGui::Text("This unit is selected");
 			if (unit->queueNum == 0) ImGui::Text("Idle for %0.1fs", unit->timeIdle);
 			else ImGui::Text("Executing command %d/%d for %0.1fs", unit->queueIndex+1, unit->queueNum, unit->timeOnCommand);
+
+			ImGui::Text("Ai type:");
+			ImGui::RadioButton("None", (int *)&unit->aiType, (int)AI_NULL);
+			ImGui::RadioButton("Walk Randomly", (int *)&unit->aiType, (int)AI_WALK_RANDOMLY);
 			ImGui::End();
 		}
 
@@ -316,6 +329,16 @@ void updateGame() {
 			}
 		}
 
+		if (unit->aiType == AI_WALK_RANDOMLY) {
+			if (unit->queueNum == 0) {
+				Command *command = &unit->queue[unit->queueNum++];
+				memset(command, 0, sizeof(Command));
+				command->exists = true;
+				command->type = COMMAND_MOVE;
+				command->movePos.setTo(rndFloat(100, platform->windowWidth-100), rndFloat(100, platform->windowHeight-100));
+			}
+		}
+
 		if (unit->queueNum > 0) {
 			if (unit->queueIndex >= unit->queueNum) {
 				unit->queueIndex = unit->queueNum = 0;
@@ -336,15 +359,15 @@ void updateGame() {
 					}
 				} else if (command->type == COMMAND_ATTACK) {
 					Unit *target = command->attackTarget; //@TODO Make this resolve from an ID
-					if (distanceBetween(unit->x, unit->y, target->x, target->y) <= 32) { //@TODO Change this hardcoded value to something based on the unit rect
+					unit->facingLeft = unit->x > target->x;
+
+					if (distanceBetween(unit->x, unit->y, target->x, target->y) <= 128) { //@TODO Change this hardcoded value to something based on the unit rect
 						unit->timeAttacking += elapsed;
 					} else {
 						unit->timeAttacking = 0;
 						float angle = radsBetween(unit->x, unit->y, target->x, target->y);
 						unit->x += cos(angle) * moveSpeed;
 						unit->y += sin(angle) * moveSpeed;
-
-						unit->facingLeft = unit->x > target->x;
 					}
 				}
 			}
