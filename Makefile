@@ -87,11 +87,6 @@ debugC:
 endif # ------------------------------------------------------------------------------------------ End Linux
 
 buildAssets:
-	find $(RAW_ASSETS_DIR)/sprites -name "*.png" -delete
-	for file in `find $(RAW_ASSETS_DIR)/sprites/ -type f -name "*.ase"`; do \
-		$(ASEPRITE) -b "$$file" --filename-format '{path}/{title}_{frame000}.{extension}' --save-as "$${file%.*}.png"& \
-		done; \
-		wait;
 	texturepacker --basic-sort-by Name --disable-rotation --max-width 4096 --max-height 4096 --data assets/sprites.spr --sheet assets/sprites.png --format mintExporter --padding 10 --premultiply-alpha $(RAW_ASSETS_DIR)/sprites
 	dos2unix assets/sprites.spr
 	dos2unix assets/catalogs/*
