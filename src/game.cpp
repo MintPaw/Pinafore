@@ -10,10 +10,16 @@ enum State {
 	STATE_BK_IDLE_RIGHT,
 	STATE_BK_WALK_LEFT,
 	STATE_BK_WALK_RIGHT,
+	STATE_BK_ATTACK_LEFT,
+	STATE_BK_ATTACK_RIGHT,
+
 	STATE_RM_IDLE_LEFT,
 	STATE_RM_IDLE_RIGHT,
 	STATE_RM_WALK_LEFT,
 	STATE_RM_WALK_RIGHT,
+	STATE_RM_ATTACK_LEFT,
+	STATE_RM_ATTACK_RIGHT,
+
 	STATE_FINAL,
 };
 
@@ -42,14 +48,19 @@ struct Frame {
 	int absFrame;
 };
 
+struct Unit; //@TODO Remove this changing Unit pointers to IDs
+
 enum CommandType {
 	COMMAND_MOVE,
+	COMMAND_ATTACK,
 };
 
 struct Command {
 	bool exists;
 	CommandType type;
+
 	Vec2 movePos;
+	Unit *attackTarget;
 };
 
 enum UnitType {
@@ -72,6 +83,7 @@ struct Unit {
 	int queueIndex;
 	float timeOnCommand;
 	float timeIdle;
+	float timeAttacking;
 };
 
 #define UNIT_LIMIT 1024
@@ -289,6 +301,11 @@ void updateGame() {
 				}
 
 				if (clickedUnit) {
+					Command *command = &unit->queue[unit->queueNum++];
+					memset(command, 0, sizeof(Command));
+					command->exists = true;
+					command->type = COMMAND_ATTACK;
+					command->attackTarget = clickedUnit;
 				} else {
 					Command *command = &unit->queue[unit->queueNum++];
 					memset(command, 0, sizeof(Command));
@@ -305,17 +322,29 @@ void updateGame() {
 				unit->timeIdle = 0;
 			} else {
 				Command *command = &unit->queue[unit->queueIndex];
+				float moveSpeed = 3;
 				if (command->type == COMMAND_MOVE) {
-					float speed = 3;
-					if (distanceBetween(unit->x, unit->y, command->movePos.x, command->movePos.y) <= speed * 2) {
+					if (distanceBetween(unit->x, unit->y, command->movePos.x, command->movePos.y) <= moveSpeed * 2) {
 						unit->queueIndex++;
 						unit->timeOnCommand = 0;
 					} else {
 						float angle = radsBetween(unit->x, unit->y, command->movePos.x, command->movePos.y);
-						unit->x += cos(angle) * speed;
-						unit->y += sin(angle) * speed;
+						unit->x += cos(angle) * moveSpeed;
+						unit->y += sin(angle) * moveSpeed;
 
 						unit->facingLeft = unit->x > command->movePos.x;
+					}
+				} else if (command->type == COMMAND_ATTACK) {
+					Unit *target = command->attackTarget; //@TODO Make this resolve from an ID
+					if (distanceBetween(unit->x, unit->y, target->x, target->y) <= 32) { //@TODO Change this hardcoded value to something based on the unit rect
+						unit->timeAttacking += elapsed;
+					} else {
+						unit->timeAttacking = 0;
+						float angle = radsBetween(unit->x, unit->y, target->x, target->y);
+						unit->x += cos(angle) * moveSpeed;
+						unit->y += sin(angle) * moveSpeed;
+
+						unit->facingLeft = unit->x > target->x;
 					}
 				}
 			}
@@ -336,14 +365,19 @@ void updateGame() {
 		} else {
 			Command *command = &unit->queue[unit->queueIndex];
 
-			if (command->type == COMMAND_MOVE) {
+			if (command->type == COMMAND_MOVE || (command->type == COMMAND_ATTACK && unit->timeAttacking == 0)) {
 				if (unit->type == UNIT_BLUE_KNIGHT && unit->facingLeft) anim = game->anims[STATE_BK_WALK_LEFT];
 				if (unit->type == UNIT_BLUE_KNIGHT && !unit->facingLeft) anim = game->anims[STATE_BK_WALK_RIGHT];
 				if (unit->type == UNIT_RED_MINOTAUR && unit->facingLeft) anim = game->anims[STATE_RM_WALK_LEFT];
 				if (unit->type == UNIT_RED_MINOTAUR && !unit->facingLeft) anim = game->anims[STATE_RM_WALK_RIGHT];
+				animTime = unit->timeOnCommand;
+			} else if (command->type == COMMAND_ATTACK && unit->timeAttacking > 0) {
+				if (unit->type == UNIT_BLUE_KNIGHT && unit->facingLeft) anim = game->anims[STATE_BK_ATTACK_LEFT];
+				if (unit->type == UNIT_BLUE_KNIGHT && !unit->facingLeft) anim = game->anims[STATE_BK_ATTACK_RIGHT];
+				if (unit->type == UNIT_RED_MINOTAUR && unit->facingLeft) anim = game->anims[STATE_RM_ATTACK_LEFT];
+				if (unit->type == UNIT_RED_MINOTAUR && !unit->facingLeft) anim = game->anims[STATE_RM_ATTACK_RIGHT];
+				animTime = unit->timeAttacking;
 			}
-
-			animTime = unit->timeOnCommand;
 		}
 
 		if (anim) {
@@ -556,7 +590,15 @@ void loadAnimations() {
 			} else if (streq(anim->name, "blueKnight/BKWalkR")) {
 				anim->loops = true;
 				game->anims[STATE_BK_WALK_RIGHT] = anim;
-			} else if (streq(anim->name, "redMinotaur/RMIdleLL")) {
+			} else if (streq(anim->name, "blueKnight/BKAtkLL")) {
+				anim->loops = true;
+				game->anims[STATE_BK_ATTACK_LEFT] = anim;
+			} else if (streq(anim->name, "blueKnight/BKAtkRL")) {
+				anim->loops = true;
+				game->anims[STATE_BK_ATTACK_RIGHT] = anim;
+			}
+
+			else if (streq(anim->name, "redMinotaur/RMIdleLL")) {
 				anim->loops = true;
 				game->anims[STATE_RM_IDLE_LEFT] = anim;
 			} else if (streq(anim->name, "redMinotaur/RMIdleRL")) {
@@ -568,6 +610,12 @@ void loadAnimations() {
 			} else if (streq(anim->name, "redMinotaur/RMWalkR")) {
 				anim->loops = true;
 				game->anims[STATE_RM_WALK_RIGHT] = anim;
+			} else if (streq(anim->name, "redMinotaur/RMAtkLL")) {
+				anim->loops = true;
+				game->anims[STATE_RM_ATTACK_LEFT] = anim;
+			} else if (streq(anim->name, "redMinotaur/RMAtkLR")) {
+				anim->loops = true;
+				game->anims[STATE_RM_ATTACK_RIGHT] = anim;
 			}
 		}
 
