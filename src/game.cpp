@@ -8,6 +8,8 @@ enum State {
 	STATE_NULL=0,
 	STATE_BK_IDLE_LEFT,
 	STATE_BK_IDLE_RIGHT,
+	STATE_BK_WALK_LEFT,
+	STATE_BK_WALK_RIGHT,
 	STATE_FINAL,
 };
 
@@ -63,6 +65,8 @@ struct Unit {
 	Command queue[QUEUE_LIMIT];
 	int queueNum;
 	int queueIndex;
+	float timeOnCommand;
+	float timeIdle;
 };
 
 #define UNIT_LIMIT 1024
@@ -230,8 +234,8 @@ void updateGame() {
 			ImGui::SetNextWindowPos(ImVec2(unit->x, unit->y + 100), ImGuiCond_Always, ImVec2(0.5, 0));
 			ImGui::Begin("Selected", NULL, ImGuiWindowFlags_AlwaysAutoResize);
 			ImGui::Text("This unit is selected");
-			if (unit->queueNum == 0) ImGui::Text("No commands");
-			else ImGui::Text("Executing command %d/%d", unit->queueIndex+1, unit->queueNum);
+			if (unit->queueNum == 0) ImGui::Text("Idle for %0.1fs", unit->timeIdle);
+			else ImGui::Text("Executing command %d/%d for %0.1fs", unit->queueIndex+1, unit->queueNum, unit->timeOnCommand);
 			ImGui::End();
 
 			if (platform->mouseJustDown) {
@@ -248,12 +252,14 @@ void updateGame() {
 		if (unit->queueNum > 0) {
 			if (unit->queueIndex >= unit->queueNum) {
 				unit->queueIndex = unit->queueNum = 0;
+				unit->timeIdle = 0;
 			} else {
 				Command *command = &unit->queue[unit->queueIndex];
 				if (command->type == COMMAND_MOVE) {
 					float speed = 3;
 					if (distanceBetween(unit->x, unit->y, command->movePos.x, command->movePos.y) <= speed * 2) {
 						unit->queueIndex++;
+						unit->timeOnCommand = 0;
 					} else {
 						float angle = radsBetween(unit->x, unit->y, command->movePos.x, command->movePos.y);
 						unit->x += cos(angle) * speed;
@@ -261,14 +267,29 @@ void updateGame() {
 					}
 				}
 			}
+			unit->timeOnCommand += elapsed;
+		} else {
+			unit->timeIdle += elapsed;
 		}
 
 		if (unit->type == UNIT_BLUE_KNIGHT) {
 			Animation *anim = NULL;
-			if (unit->facingLeft) {
-				anim = game->anims[STATE_BK_IDLE_LEFT];
+
+			if (unit->queueNum == 0) {
+				if (unit->facingLeft) {
+					anim = game->anims[STATE_BK_IDLE_LEFT];
+				} else {
+					anim = game->anims[STATE_BK_IDLE_RIGHT];
+				}
 			} else {
-				anim = game->anims[STATE_BK_IDLE_RIGHT];
+				Command *command = &unit->queue[unit->queueIndex];
+				if (command->type == COMMAND_MOVE) {
+					if (unit->facingLeft) {
+						anim = game->anims[STATE_BK_WALK_LEFT];
+					} else {
+						anim = game->anims[STATE_BK_WALK_RIGHT];
+					}
+				}
 			}
 
 			int framesIn = getAnimFrameAtSecond(anim, 0);
@@ -409,6 +430,12 @@ void loadAnimations() {
 			Frame *frame = &game->spriteFrames[i];
 			char *nameEnd = NULL;
 			nameEnd = strrchr(frame->name, '_');
+			if (!nameEnd) {
+				for (int endNum = 0; endNum < 9; endNum++) {
+					nameEnd = strrchr(frame->name, '0'+endNum);
+					if (nameEnd) break;
+				}
+			}
 			if (!nameEnd) nameEnd = frame->name + strlen(frame->name);
 			int nameLen = nameEnd - frame->name;
 
@@ -436,6 +463,12 @@ void loadAnimations() {
 			for (int frameI = 0; frameI < game->spriteFramesNum; frameI++) {
 				Frame *frame = &game->spriteFrames[frameI];
 				char *nameEnd = strrchr(frame->name, '_');
+				if (!nameEnd) {
+					for (int endNum = 0; endNum < 9; endNum++) {
+						nameEnd = strrchr(frame->name, '0'+endNum);
+						if (nameEnd) break;
+					}
+				}
 				if (!nameEnd) nameEnd = frame->name + strlen(frame->name);
 				int nameLen = nameEnd - frame->name;
 
@@ -449,15 +482,21 @@ void loadAnimations() {
 
 		for (int i = 0; i < tempAnimNamesNum; i++) {
 			Animation *anim = &game->spriteAnims[i];
+			printf("Anim name: %s\n", anim->name);
 
-			if (streq(anim->name, "blueKnight/BKIdleLL1")) {
+			if (streq(anim->name, "blueKnight/BKIdleLL")) {
 				// anim->speed = 0.2;
 				anim->loops = true;
 				game->anims[STATE_BK_IDLE_LEFT] = anim;
-			} else if (streq(anim->name, "blueKnight/BKIdleRL1")) {
-				// anim->speed = 0.2;
+			} else if (streq(anim->name, "blueKnight/BKIdleRL")) {
 				anim->loops = true;
 				game->anims[STATE_BK_IDLE_RIGHT] = anim;
+			} else if (streq(anim->name, "blueKnight/BKWalkL")) {
+				anim->loops = true;
+				game->anims[STATE_BK_WALK_LEFT] = anim;
+			} else if (streq(anim->name, "blueKnight/BKWalkR")) {
+				anim->loops = true;
+				game->anims[STATE_BK_WALK_RIGHT] = anim;
 			}
 		}
 
