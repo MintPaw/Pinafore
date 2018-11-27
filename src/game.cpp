@@ -48,6 +48,8 @@ struct Unit {
 	float y;
 	UnitType type;
 	bool facingLeft;
+
+	int keyToSelect;
 };
 
 #define UNIT_LIMIT 1024
@@ -72,6 +74,7 @@ struct Game {
 
 	Unit units[UNIT_LIMIT];
 	int currentLevel;
+	Unit *selectedUnit;
 
 	Texture *finalRT;
 	Texture *gameRT;
@@ -158,7 +161,7 @@ void updateGame() {
 	// #################################################################################################################
 
 	platformStartFrame();
-	ImGui::PushFont(game->defaultGuiFont);
+	ImGui::PushFont(game->smallGuiFont);
 
 	NanoTime startTime;
 	getNanoTime(&startTime);
@@ -192,12 +195,30 @@ void updateGame() {
 		Unit *unit1 = newUnit();
 		unit1->type = UNIT_BLUE_KNIGHT;
 		unit1->x = 100;
-		unit1->y = 600;
+		unit1->y = 400;
+		unit1->keyToSelect = 'Q';
+
+		Unit *unit2 = newUnit();
+		unit2->type = UNIT_BLUE_KNIGHT;
+		unit2->x = 200;
+		unit2->y = 400;
+		unit2->keyToSelect = 'W';
 	}
 
 	for (int i = 0; i < UNIT_LIMIT; i++) {
 		Unit *unit = &game->units[i];
 		if (!unit->exists) continue;
+
+		if (unit->keyToSelect && keyJustPressed(unit->keyToSelect)) {
+			game->selectedUnit = unit;
+		}
+
+		if (game->selectedUnit == unit) {
+			ImGui::SetNextWindowPos(ImVec2(unit->x, unit->y + 100), ImGuiCond_Always, ImVec2(0.5, 0));
+			ImGui::Begin("Selected", NULL, ImGuiWindowFlags_AlwaysAutoResize);
+			ImGui::Text("This unit is selected");
+			ImGui::End();
+		}
 
 		if (unit->type == UNIT_BLUE_KNIGHT) {
 			Animation *anim = NULL;
