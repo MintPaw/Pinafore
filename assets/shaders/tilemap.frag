@@ -60,7 +60,7 @@ void main(void) {
 
 	uv += offset;
 	uv *= vec2(u_pixelRatio);
-	uv.y = 1-uv.y; // This compensates for the vertical flip
+	uv.y = 1.0 - uv.y; // This compensates for the vertical flip
 	fragColor = TEXTURE2D(u_tilesetTexture, uv);
 
 #if __VERSION__ == 100

@@ -1,5 +1,5 @@
-#define STB_TRUETYPE_IMPLEMENTATION 
-#include "stb_truetype.h"
+// #define STB_TRUETYPE_IMPLEMENTATION
+// #include "stb_truetype.h"
 
 #define FONT_WIDTH_LIMIT 1024
 #define FONT_HEIGHT_LIMIT 1024

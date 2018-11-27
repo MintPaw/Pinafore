@@ -1,17 +1,19 @@
 #include <math.h>
 
-#define Min(x, y) ((x) < (y) ? (x) : (y))
-#define Max(x, y) ((x) > (y) ? (x) : (y))
+#define MinNum(x, y) ((x) < (y) ? (x) : (y))
+#define MaxNum(x, y) ((x) > (y) ? (x) : (y))
 #define PI 3.14159
 #define ArrayLength(x) ((sizeof(x)/sizeof(0[x])) / ((size_t)(!(sizeof(x) % sizeof(0[x])))))
 #define Clamp(x, min, max) ((x) < (min) ? (min) : (x) > (max) ? (max) : (x))
 
 struct Rect;
 struct Matrix3;
-struct Point;
+struct Vec2;
 
 float roundToNearest(float num, float nearest=1);
 bool pointInRect(float px, float py, float rx, float ry, float rw, float rh);
+bool circleIntersection(float x1, float y1, float r1, float x2, float y2, float r2);
+bool pointInCircle(float px, float py, float cx, float cy, float r);
 
 float rnd();
 float rndFloat(float min, float max);
@@ -20,32 +22,64 @@ bool rndBool();
 
 float distanceBetween(float x1, float y1, float x2, float y2);
 float radsBetween(float x1, float y1, float x2, float y2);
-Point vectorBetween(float x1, float y1, float x2, float y2);
+Vec2 vectorBetween(float x1, float y1, float x2, float y2);
+
+float lerp(float min, float max, float perc);
+Vec2 lerpVec2(Vec2 *min, Vec2 *max, float perc);
+int lerpColour(int colour1, int colour2, float perc);
+
+int argbToHex(unsigned char a, unsigned char r, unsigned char g, unsigned char b);
+
 float toDeg(float rads);
 float toRad(float degs);
 
-struct Point {
+enum Ease {
+	LINEAR = 0,
+	QUAD_IN, QUAD_OUT, QUAD_IN_OUT,
+	CUBIC_IN, CUBIC_OUT, CUBIC_IN_OUT,
+	QUART_IN, QUART_OUT, QUART_IN_OUT,
+	QUINT_IN, QUINT_OUT, QUINT_IN_OUT,
+	SINE_IN, SINE_OUT, SINE_IN_OUT,
+	CIRC_IN, CIRC_OUT, CIRC_IN_OUT,
+	EXP_IN, EXP_OUT, EXP_IN_OUT,
+	ELASTIC_IN, ELASTIC_OUT, ELASTIC_IN_OUT,
+	BACK_IN, BACK_OUT, BACK_IN_OUT,
+	BOUNCE_IN, BOUNCE_OUT, BOUNCE_IN_OUT
+};
+
+float tweenEase(float p, Ease ease);
+
+struct Vec2 {
 	float x;
 	float y;
 
 	void setTo(float x=0, float y=0);
 	void normalize(float scale=1);
 
-	void add(Point *other);
-	void subtract(Point *other);
-	void multiply(Point *other);
-	void divide(Point *other);
+	void add(Vec2 *other);
+	void subtract(Vec2 *other);
+	void multiply(Vec2 *other);
+	void divide(Vec2 *other);
 
 	void add(float other);
 	void subtract(float other);
 	void multiply(float other);
 	void divide(float other);
 
-	float distance(Point *other);
+	float distance(Vec2 *other);
 	float distance(float x, float y);
 
 	bool isZero();
 };
+
+struct Vec3 {
+	float x;
+	float y;
+	float z;
+
+	void setTo(float x=0, float y=0, float z=0);
+};
+
 
 struct Rect {
 	float x;
@@ -56,10 +90,10 @@ struct Rect {
 	void setTo(float x=0, float y=0, float width=0, float height=0);
 	bool equals(Rect *other);
 	bool intersects(Rect *other);
-	bool containsPoint(Point *point);
-	bool containsPoint(float px, float py);
+	bool contains(Vec2 *point);
+	bool contains(float px, float py);
 	float distanceToPerimeter(float px, float py);
-	void randomPoint(Point *point);
+	void randomVec2(Vec2 *point);
 	void print();
 };
 
@@ -105,20 +139,36 @@ bool pointInRect(float px, float py, float rx, float ry, float rw, float rh) {
 	return px >= rx && px <= rx+rw && py >= ry && py <= ry+rh;
 }
 
+bool circleIntersection(float x1, float y1, float r1, float x2, float y2, float r2) {
+	float a = r1 + r2;
+	float x = x1 - x2;
+	float y = y1 - y2;
+
+	return a > sqrt((x*x) + (y*y));
+}
+
+bool pointInCircle(float px, float py, float cx, float cy, float r) {
+	return distanceBetween(px, py, cx, cy) <= r;
+}
+
 float rnd() {
-	return (float)rand()/(float)RAND_MAX;
+	float max = 10000;
+	float result = rndInt(0, max)/max;
+	return result;
 }
 
 float rndFloat(float min, float max) {
-	return min + rnd() * (max - min);
+	float result = min + rnd() * (max - min);
+	return result;
 }
 
 int rndInt(int min, int max) {
-	return round((rndFloat(min, max)));
+	int result = rand() % (max + 1 - min) + min;
+	return result;
 }
 
 inline bool rndBool() {
-	return rndInt(0, 1);
+	return rnd() > 0.5;
 }
 
 float distanceBetween(float x1, float y1, float x2, float y2) {
@@ -133,11 +183,45 @@ float radsBetween(float x1, float y1, float x2, float y2) {
 	return atan2(y2 - y1, x2 - x1);
 }
 
-Point vectorBetween(float x1, float y1, float x2, float y2) {
+Vec2 vectorBetween(float x1, float y1, float x2, float y2) {
 	float rads = radsBetween(x1, y1, x2, y2);
 
-	Point point = {(float)cos(rads), (float)sin(rads)};
+	Vec2 point = {(float)cos(rads), (float)sin(rads)};
 	return point;
+}
+
+float lerp(float min, float max, float perc) {
+	return min + (max - min) * perc;
+}
+
+Vec2 lerpVec2(Vec2 *min, Vec2 *max, float perc) {
+	Vec2 point = {};
+	point.x = lerp(min->x, max->x, perc);
+	point.y = lerp(min->y, max->y, perc);
+	return point;
+}
+
+int lerpColour(int colour1, int colour2, float perc) {
+	unsigned char a1 = (colour1 >> 24) & 0xFF;
+	unsigned char r1 = (colour1 >> 16) & 0xFF;
+	unsigned char g1 = (colour1 >> 8) & 0xFF;
+	unsigned char b1 = (colour1     ) & 0xFF;
+
+	unsigned char a2 = (colour2 >> 24) & 0xFF;
+	unsigned char r2 = (colour2 >> 16) & 0xFF;
+	unsigned char g2 = (colour2 >> 8) & 0xFF;
+	unsigned char b2 = (colour2     ) & 0xFF;
+
+	return argbToHex(
+		lerp(a1, a2, perc),
+		lerp(r1, r2, perc),
+		lerp(g1, g2, perc),
+		lerp(b1, b2, perc)
+	);
+}
+
+int argbToHex(unsigned char a, unsigned char r, unsigned char g, unsigned char b) {
+	return ((a & 0xff) << 24) + ((r & 0xff) << 16) + ((g & 0xff) << 8) + (b & 0xff);
 }
 
 float toDeg(float rads) {
@@ -148,12 +232,12 @@ float toRad(float degs) {
 	return degs * 0.0174533;
 }
 
-void Point::setTo(float x, float y) {
+void Vec2::setTo(float x, float y) {
 	this->x = x;
 	this->y = y;
 }
 
-void Point::normalize(float scale) {
+void Vec2::normalize(float scale) {
 	float norm = sqrt(this->x*this->x + this->y*this->y);
 	if (norm != 0) {
 		this->x = scale * this->x / norm;
@@ -161,56 +245,62 @@ void Point::normalize(float scale) {
 	}
 }
 
-void Point::add(Point *other) {
+void Vec2::add(Vec2 *other) {
 	this->x += other->x;
 	this->y += other->y;
 }
 
-void Point::subtract(Point *other) {
+void Vec2::subtract(Vec2 *other) {
 	this->x -= other->x;
 	this->y -= other->y;
 }
 
-void Point::multiply(Point *other) {
+void Vec2::multiply(Vec2 *other) {
 	this->x *= other->x;
 	this->y *= other->y;
 }
 
-void Point::divide(Point *other) {
+void Vec2::divide(Vec2 *other) {
 	this->x /= other->x;
 	this->y /= other->y;
 }
 
-void Point::add(float other) {
+void Vec2::add(float other) {
 	this->x += other;
 	this->y += other;
 }
 
-void Point::subtract(float other) {
+void Vec2::subtract(float other) {
 	this->x -= other;
 	this->y -= other;
 }
 
-void Point::multiply(float other) {
+void Vec2::multiply(float other) {
 	this->x *= other;
 	this->y *= other;
 }
 
-void Point::divide(float other) {
+void Vec2::divide(float other) {
 	this->x /= other;
 	this->y /= other;
 }
 
-float Point::distance(Point *other) {
+float Vec2::distance(Vec2 *other) {
 	return distanceBetween(this->x, this->y, other->x, other->y);
 }
 
-float Point::distance(float x, float y) {
+float Vec2::distance(float x, float y) {
 	return distanceBetween(this->x, this->y, x, y);
 }
 
-bool Point::isZero() {
+bool Vec2::isZero() {
 	return this->x == 0 && this->y == 0;
+}
+
+void Vec3::setTo(float x, float y, float z) {
+	this->x = x;
+	this->y = y;
+	this->z = z;
 }
 
 void Rect::setTo(float x, float y, float width, float height) {
@@ -256,9 +346,8 @@ bool Rect::intersects(Rect *other) {
 	return intercects || contains;
 }
 
-bool Rect::containsPoint(Point *point) { return pointInRect(point->x, point->y, this->x, this->y, this->width, this->height); }
-bool Rect::containsPoint(float px, float py) { return pointInRect(px, py, this->x, this->y, this->width, this->height); }
-
+bool Rect::contains(Vec2 *point) { return pointInRect(point->x, point->y, this->x, this->y, this->width, this->height); }
+bool Rect::contains(float px, float py) { return pointInRect(px, py, this->x, this->y, this->width, this->height); }
 
 float Rect::distanceToPerimeter(float px, float py) {
 	Rect *rect = this;
@@ -276,9 +365,9 @@ float Rect::distanceToPerimeter(float px, float py) {
 	float db = fabs(y-b);
 
 	float m;
-	m = Min(dl, dr);
-	m = Min(m, dt);
-	m = Min(m, db);
+	m = MinNum(dl, dr);
+	m = MinNum(m, dt);
+	m = MinNum(m, db);
 
 	float minX;
 	float minY;
@@ -300,7 +389,7 @@ float Rect::distanceToPerimeter(float px, float py) {
 	return distanceBetween(minX, minY, px, py);
 }
 
-void Rect::randomPoint(Point *point) {
+void Rect::randomVec2(Vec2 *point) {
 	point->x = rndFloat(this->x, this->x + this->width);
 	point->y = rndFloat(this->y, this->y + this->height);
 }
@@ -531,4 +620,98 @@ void Matrix4::print() {
 		this->data[8], this->data[9], this->data[10], this->data[11],
 		this->data[12], this->data[13], this->data[14], this->data[15]
 	);
+}
+
+float tweenEase(float p, Ease ease) {
+	float piOver2 = 3.14159/2;
+	if (ease == LINEAR) {
+		return p;
+	} else if (ease == QUAD_IN) {
+		return p * p;
+	} else if (ease == QUAD_OUT) {
+		return -(p * (p - 2));
+	} else if (ease == QUAD_IN_OUT) {
+		if (p < 0.5) return 2 * p * p;
+		else return (-2 * p * p) + (4 * p) - 1;
+	} else if (ease == CUBIC_IN) {
+		return p * p * p;
+	} else if (ease == CUBIC_OUT) {
+		float f = (p - 1);
+		return f * f * f + 1;
+	} else if (ease == CUBIC_IN_OUT) {
+		float f = ((2 * p) - 2);
+		if (p < 0.5) return 4 * p * p * p;
+		else return 0.5 * f * f * f + 1;
+	} else if (ease == QUART_IN) {
+		return p * p * p * p;
+	} else if (ease == QUART_OUT) {
+		float f = (p - 1);
+		return f * f * f * (1 - p) + 1;
+	} else if (ease == QUART_IN_OUT) {
+		float f = (p - 1);
+		if (p < 0.5) return 8 * p * p * p * p;
+		else return -8 * f * f * f * f + 1;
+	} else if (ease == QUINT_IN) {
+		return p * p * p * p * p;
+	} else if (ease == QUINT_OUT) {
+		float f = (p - 1);
+		return f * f * f * f * f + 1;
+	} else if (ease == QUINT_IN_OUT) {
+		float f = ((2 * p) - 2);
+		if (p < 0.5) return 16 * p * p * p * p * p;
+		else return  0.5 * f * f * f * f * f + 1;
+	} else if (ease == SINE_IN) {
+		return sin((p - 1) * piOver2) + 1;
+	} else if (ease == SINE_OUT) {
+		return sin(p * piOver2);
+	} else if (ease == SINE_IN_OUT) {
+		return 0.5 * (1 - cos(p * M_PI));
+	} else if (ease == CIRC_IN) {
+		return 1 - sqrt(1 - (p * p));
+	} else if (ease == CIRC_OUT) {
+		return sqrt((2 - p) * p);
+	} else if (ease == CIRC_IN_OUT) {
+		if (p < 0.5) return 0.5 * (1 - sqrt(1 - 4 * (p * p)));
+		else return 0.5 * (sqrt(-((2 * p) - 3) * ((2 * p) - 1)) + 1);
+	} else if (ease == EXP_IN) {
+		return (p == 0.0) ? p : pow(2, 10 * (p - 1));
+	} else if (ease == EXP_OUT) {
+		return (p == 1.0) ? p : 1 - pow(2, -10 * p);
+	} else if (ease == EXP_IN_OUT) {
+		if (p == 0.0 || p == 1.0) return p;
+		if (p < 0.5) return 0.5 * pow(2, (20 * p) - 10);
+		else return -0.5 * pow(2, (-20 * p) + 10) + 1;
+	} else if (ease == ELASTIC_IN) {
+		return sin(13 * piOver2 * p) * pow(2, 10 * (p - 1));
+	} else if (ease == ELASTIC_OUT) {
+		return sin(-13 * piOver2 * (p + 1)) * pow(2, -10 * p) + 1;
+	} else if (ease == ELASTIC_IN_OUT) {
+		if (p < 0.5) return 0.5 * sin(13 * piOver2 * (2 * p)) * pow(2, 10 * ((2 * p) - 1));
+		else return 0.5 * (sin(-13 * piOver2 * ((2 * p - 1) + 1)) * pow(2, -10 * (2 * p - 1)) + 2);
+	} else if (ease == BACK_IN) {
+		return p * p * p - p * sin(p * M_PI);
+	} else if (ease == BACK_OUT) {
+		float f = (1 - p);
+		return 1 - (f * f * f - f * sin(f * M_PI));
+	} else if (ease == BACK_IN_OUT) {
+		if (p < 0.5) {
+			float f = 2 * p;
+			return 0.5 * (f * f * f - f * sin(f * M_PI));
+		} else {
+			float f = (1 - (2*p - 1));
+			return 0.5 * (1 - (f * f * f - f * sin(f * M_PI))) + 0.5;
+		}
+	} else if (ease == BOUNCE_IN) {
+		return 1 - tweenEase(1 - p, BOUNCE_OUT);
+	} else if (ease == BOUNCE_OUT) {
+		if (p < 4/11.0) return (121 * p * p)/16.0;
+		else if (p < 8/11.0) return (363/40.0 * p * p) - (99/10.0 * p) + 17/5.0;
+		else if (p < 9/10.0) return (4356/361.0 * p * p) - (35442/1805.0 * p) + 16061/1805.0;
+		else return (54/5.0 * p * p) - (513/25.0 * p) + 268/25.0;
+	} else if (ease == BOUNCE_IN_OUT) {
+		if (p < 0.5) return 0.5 * tweenEase(p*2, BOUNCE_IN);
+		else return 0.5 * tweenEase(p * 2 - 1, BOUNCE_OUT) + 0.5;
+	}
+
+	return 0;
 }

@@ -1,0 +1,24 @@
+frameName   tower/bullet2_
+startColour 0x665680c5
+endColour   0x661a345f
+
+speed0Min 0.3
+speed0Max 1.2
+speed1Min 1.5
+speed1Max 3
+
+scale0Min 1
+scale0Max 3
+scale1Min 0
+scale1Max 0
+
+fadeInTime 0.1
+fadeOutTime 0.1
+
+angleMin 250
+angleMax 280
+
+lifetimeMin 0.3
+lifetimeMax 1
+
+particlesMax 4

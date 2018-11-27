@@ -1,40 +1,49 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 
+#define TARGET_TEXTURE_LIMIT 16
+// #define MULTISAMPLING
+
 #define GetAttrib(programName, attribName) programName.attribName = glGetAttribLocation(programName.program, #attribName) 
 #define GetUniform(programName, uniformName) programName.uniformName = glGetUniformLocation(programName.program, #uniformName) 
 struct RenderProps;
 struct Texture;
 
 void initRenderer(int screenWidth, int screenHeight);
-GLuint buildShader(char *vertPath, char *fragPath);
+GLuint buildShader(const char *vertPath, const char *fragPath);
 
 void setShaderProgram(GLuint program);
-void setArrayBuffer(GLuint buffer);
 void changeArrayBuffer(GLuint glBuffer, float x, float y, float width, float height);
-GLuint genGlArrayBuffer(float x, float y, float width, float height);
-void setTexture(GLuint texture, int slot = 0);
-void setFramebufferTexture(GLuint texture);
-void setFramebuffer(GLuint framebuffer);
+void changeArrayBuffer(GLuint buffer, float *verts, int vertsNum);
 void setViewport(float x, float y, float w, float h);
 void destroyTexture(Texture *tex);
 
 Texture *uploadPngTexturePath(const char *path);
 Texture *uploadPngTexture(void *data, int size);
 Texture *uploadTexture(void *data, int width, int height);
+void setTextureData(Texture *texture, void *data, int width, int height);
 
-void clearRenderer(float r=1, float g=1, float b=1, float a=1);
-void setTargetTexture(Texture *texture);
-void revertTargetTexture();
+void clearRenderer(float r=0, float g=0, float b=0, float a=0);
 RenderProps newRenderProps();
+
+void pushTargetTexture(Texture *texture);
+void popTargetTexture();
+void setTargetTexture(Texture *texture);
+void resetTargetTexture();
+
 void drawCircle(float x, float y, float radius, int colour);
 void drawRect(float x, float y, float width, float height, int colour);
 void drawTiles(Texture *srcTexture, int destWidth, int destHeight, int tileWidth, int tileHeight, int tilesWide, int tilesHigh, int *tiles);
 void drawTexture(Texture *texture, RenderProps *addedProps);
-void drawOneBppBitmap(void *bitmapData, RenderProps *addedProps);
+void draw3dTriangle(Texture *texture=NULL);
+void blitFramebuffer();
+
+void drawInverted(Texture *texture);
+void drawOutlined(Texture *texture, int outlineColour, float outlineSize=1);
+void drawGaussianBlurredX(Texture *texture);
+void drawGaussianBlurredY(Texture *texture);
 
 void checkGlError(int lineNum);
-
 #define CheckGlError() checkGlError(__LINE__);
 
 struct RenderProps {
@@ -45,6 +54,7 @@ struct RenderProps {
 	float alpha;
 	float rotation;
 	int tint;
+	bool smooth;
 
 	float pivotX;
 	float pivotY;
@@ -100,32 +110,72 @@ struct DefaultProgram {
 	GLuint u_uv;
 	GLuint u_tint;
 	GLuint u_alpha;
+	GLuint u_texture;
 };
 
-struct OneBppProgram {
+struct Tri3dProgram {
+	GLuint program;
+	GLuint a_position;
+	GLuint a_texCoord;
+	GLuint u_texture;
+};
+
+struct EffectProgram {
 	GLuint program;
 	GLuint a_position;
 	GLuint a_texCoord;
 	GLuint u_matrix;
-	GLuint u_uv;
-	GLuint u_tint;
-	GLuint u_alpha;
+	GLuint u_texture;
+	GLuint u_invert;
+};
+
+struct OutlineProgram {
+	GLuint program;
+	GLuint a_position;
+	GLuint a_texCoord;
+	GLuint u_matrix;
+	GLuint u_texture;
+	GLuint u_viewportInverse;
+	GLuint u_outlineSize;
+	GLuint u_outlineColour;
+};
+
+struct GaussianBlurXProgram {
+	GLuint program;
+	GLuint a_position;
+	GLuint u_matrix;
+	GLuint u_imageSize;
+	GLuint u_texture;
+};
+
+struct GaussianBlurYProgram {
+	GLuint program;
+	GLuint a_position;
+	GLuint u_matrix;
+	GLuint u_imageSize;
+	GLuint u_texture;
 };
 
 struct Renderer {
 	int errorCount;
 	int screenWidth;
 	int screenHeight;
+	bool enabled;
 	Rect camera;
 
 	RectProgram rectProgram;
 	CircleProgram circleProgram;
 	DefaultProgram defaultProgram;
 	TilemapProgram tilemapProgram;
-	OneBppProgram oneBppProgram;
+	Tri3dProgram tri3dProgram;
+	EffectProgram effectProgram;
+	OutlineProgram outlineProgram;
+	GaussianBlurXProgram gaussianBlurXProgram;
+	GaussianBlurYProgram gaussianBlurYProgram;
 
 	Texture *currentTargetTexture;
-	Texture *prevTargetTexture;
+	Texture *targetTextureStack[TARGET_TEXTURE_LIMIT];
+	int targetTextureStackNum;
 
 	GLuint tempVerts;
 	GLuint tempTexCoords;
@@ -133,10 +183,10 @@ struct Renderer {
 
 	GLuint curShaderProgram;
 	GLuint curArrayBuffer;
-	GLuint currentTexture;
 	GLuint currentFramebuffer;
-	GLuint currentFramebufferTexture;
 	Rect currentViewport;
+
+	GLuint texture2dType;
 };
 
 Renderer *renderer;
@@ -146,14 +196,30 @@ Renderer *renderer;
 void initRenderer(int screenWidth, int screenHeight) {
 	printf("Initing renderer\n");
 
+#ifdef __EMSCRIPTEN__
+	printf("GL error check disabled\n");
+#endif
+
 	renderer = (Renderer *)malloc(sizeof(Renderer));
 	memset(renderer, 0, sizeof(Renderer));
+	renderer->enabled = true;
 	renderer->screenWidth = screenWidth;
 	renderer->screenHeight = screenHeight;
+#ifdef MULTISAMPLING
+	renderer->texture2dType = GL_TEXTURE_2D_MULTISAMPLE;
+#else
+	renderer->texture2dType = GL_TEXTURE_2D;
+#endif
 	stbi_set_flip_vertically_on_load(true);
 
 	glDisable(GL_DEPTH_TEST);
 	glEnable(GL_BLEND);
+
+	if (renderer->texture2dType == GL_TEXTURE_2D_MULTISAMPLE) {
+		glEnable(GL_SAMPLE_ALPHA_TO_COVERAGE);
+		glEnable(GL_SAMPLE_ALPHA_TO_ONE);
+		glEnable(GL_MULTISAMPLE);
+	}
 	// glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 	glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_SRC_ALPHA, GL_ONE);
 	CheckGlError();
@@ -182,6 +248,7 @@ void initRenderer(int screenWidth, int screenHeight) {
 	GetUniform(renderer->defaultProgram, u_uv);
 	GetUniform(renderer->defaultProgram, u_tint);
 	GetUniform(renderer->defaultProgram, u_alpha);
+	GetUniform(renderer->defaultProgram, u_texture);
 
 	renderer->tilemapProgram.program = buildShader("assets/shaders/tilemap.vert", "assets/shaders/tilemap.frag");
 	GetAttrib(renderer->tilemapProgram, a_position);
@@ -193,29 +260,52 @@ void initRenderer(int screenWidth, int screenHeight) {
 	GetUniform(renderer->tilemapProgram, u_resultSize);
 	GetUniform(renderer->tilemapProgram, u_pixelRatio);
 
-	renderer->oneBppProgram.program = buildShader("assets/shaders/oneBpp.vert", "assets/shaders/oneBpp.frag");
-	GetAttrib(renderer->oneBppProgram, a_position);
-	GetAttrib(renderer->oneBppProgram, a_texCoord);
-	GetUniform(renderer->oneBppProgram, u_matrix);
-	GetUniform(renderer->oneBppProgram, u_uv);
-	GetUniform(renderer->oneBppProgram, u_tint);
-	GetUniform(renderer->oneBppProgram, u_alpha);
+	renderer->tri3dProgram.program = buildShader("assets/shaders/tri3d.vert", "assets/shaders/tri3d.frag");
+	GetAttrib(renderer->tri3dProgram, a_position);
+	GetAttrib(renderer->tri3dProgram, a_texCoord);
+	GetUniform(renderer->tri3dProgram, u_texture);
+
+	renderer->effectProgram.program = buildShader("assets/shaders/effects.vert", "assets/shaders/effects.frag");
+	GetAttrib(renderer->effectProgram, a_position);
+	GetAttrib(renderer->effectProgram, a_texCoord);
+	GetUniform(renderer->effectProgram, u_matrix);
+	GetUniform(renderer->effectProgram, u_texture);
+	GetUniform(renderer->effectProgram, u_invert);
+
+	renderer->outlineProgram.program = buildShader("assets/shaders/outline.vert", "assets/shaders/outline.frag");
+	GetAttrib(renderer->outlineProgram, a_position);
+	GetAttrib(renderer->outlineProgram, a_texCoord);
+	GetUniform(renderer->outlineProgram, u_matrix);
+	GetUniform(renderer->outlineProgram, u_texture);
+	GetUniform(renderer->outlineProgram, u_viewportInverse);
+	GetUniform(renderer->outlineProgram, u_outlineSize);
+	GetUniform(renderer->outlineProgram, u_outlineColour);
+
+	renderer->gaussianBlurXProgram.program = buildShader("assets/shaders/gaussianBlurX.vert", "assets/shaders/gaussianBlur.frag");
+	GetAttrib(renderer->gaussianBlurXProgram, a_position);
+	GetUniform(renderer->gaussianBlurXProgram, u_matrix);
+	GetUniform(renderer->gaussianBlurXProgram, u_texture);
+	GetUniform(renderer->gaussianBlurXProgram, u_imageSize);
+
+	renderer->gaussianBlurYProgram.program = buildShader("assets/shaders/gaussianBlurY.vert", "assets/shaders/gaussianBlur.frag");
+	GetAttrib(renderer->gaussianBlurYProgram, a_position);
+	GetUniform(renderer->gaussianBlurYProgram, u_matrix);
+	GetUniform(renderer->gaussianBlurYProgram, u_texture);
+	GetUniform(renderer->gaussianBlurYProgram, u_imageSize);
 
 	CheckGlError();
 
-	renderer->tempVerts = genGlArrayBuffer(0, 0, 0, 0);
-	renderer->tempTexCoords = genGlArrayBuffer(0, 0, 0, 0);
+	glGenBuffers(1, &renderer->tempVerts);
+	glGenBuffers(1, &renderer->tempTexCoords);
 	glGenFramebuffers(1, &renderer->textureFramebuffer);
 	CheckGlError();
 
-	setTargetTexture(0);
+	pushTargetTexture(0);
 }
 
-GLuint buildShader(char *vertPath, char *fragPath) {
-	char *vertSrc;
-	char *fragSrc;
-	readFile(vertPath, (void **)&vertSrc);
-	readFile(fragPath, (void **)&fragSrc);
+GLuint buildShader(const char *vertPath, const char *fragPath) {
+	char *vertSrc = (char *)readFile(vertPath);
+	char *fragSrc = (char *)readFile(fragPath);
 
 #ifdef GL_ES
 	const char *versionLine = "#version 300 es\n";
@@ -240,7 +330,7 @@ GLuint buildShader(char *vertPath, char *fragPath) {
 	glGetShaderiv(vert, GL_COMPILE_STATUS, &vertReturn);
 	if (!vertReturn) {
 		glGetShaderInfoLog(vert, errLogLimit, &errLogNum, errLog);
-		printf("Vertex result is: %d\nError(%d):\n%s\n", vertReturn, errLogNum, errLog);
+		printf("%s result is: %d\nError(%d):\n%s\n", vertPath, vertReturn, errLogNum, errLog);
 	}
 
 	GLuint frag = glCreateShader(GL_FRAGMENT_SHADER);
@@ -256,7 +346,7 @@ GLuint buildShader(char *vertPath, char *fragPath) {
 	glGetShaderiv(frag, GL_COMPILE_STATUS, &fragReturn);
 	if (!fragReturn) {
 		glGetShaderInfoLog(frag, errLogLimit, &errLogNum, errLog);
-		printf("Fragment result is: %d\nError:\n%s\n", fragReturn, errLog);
+		printf("%s result is: %d\nError:\n%s\n", fragPath, fragReturn, errLog);
 	}
 
 	GLuint program = glCreateProgram();
@@ -279,6 +369,8 @@ GLuint buildShader(char *vertPath, char *fragPath) {
 }
 
 void clearRenderer(float r, float g, float b, float a) {
+	if (!renderer->enabled) return;
+
 	glClearColor(r, g, b, a);
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 }
@@ -289,10 +381,57 @@ RenderProps newRenderProps() {
 	props.scaleY = 1;
 	props.alpha = 1;
 	props.scrollFactor = 1;
+	props.smooth = true;
 	return props;
 }
 
+void pushTargetTexture(Texture *texture) {
+	if (renderer->targetTextureStackNum >= TARGET_TEXTURE_LIMIT-1) {
+		printf("Target texture overflow");
+		Assert(0);
+	}
+
+	renderer->targetTextureStack[renderer->targetTextureStackNum++] = renderer->currentTargetTexture;
+	renderer->currentTargetTexture = texture;
+
+	setTargetTexture(renderer->currentTargetTexture);
+};
+
+void popTargetTexture() {
+	if (renderer->targetTextureStackNum <= 0) {
+		renderer->currentTargetTexture = NULL;
+		setTargetTexture(NULL);
+		return;
+	}
+
+	renderer->currentTargetTexture = renderer->targetTextureStack[renderer->targetTextureStackNum-1];
+	renderer->targetTextureStackNum--;
+	setTargetTexture(renderer->currentTargetTexture);
+}
+
+void resetTargetTexture() {
+	setTargetTexture(NULL);
+	renderer->targetTextureStackNum = 0;
+}
+
+void setTargetTexture(Texture *texture) {
+	if (!renderer->enabled) return;
+
+	if (texture == NULL) {
+		glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+		setViewport(0, 0, renderer->screenWidth, renderer->screenHeight);
+	} else {
+		glBindFramebuffer(GL_DRAW_FRAMEBUFFER, renderer->textureFramebuffer);
+		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, renderer->texture2dType, texture->id, 0);
+		setViewport(0, 0, texture->width, texture->height);
+	}
+
+	CheckGlError();
+}
+
 void drawRect(float x, float y, float width, float height, int colour) {
+	if (!renderer->enabled) return;
+
 	setShaderProgram(renderer->rectProgram.program);
 	CheckGlError();
 
@@ -325,35 +464,19 @@ void drawRect(float x, float y, float width, float height, int colour) {
 	CheckGlError();
 }
 
-void setTargetTexture(Texture *texture) {
-	renderer->prevTargetTexture = renderer->currentTargetTexture;
-	renderer->currentTargetTexture = texture;
-
-	if (texture == NULL) {
-		setFramebuffer(0);
-		setViewport(0, 0, renderer->screenWidth, renderer->screenHeight);
-	} else {
-		setFramebuffer(renderer->textureFramebuffer);
-		setFramebufferTexture(texture->id);
-		setViewport(0, 0, texture->width, texture->height);
-	}
-
-	CheckGlError();
-};
-
-void revertTargetTexture() {
-	setTargetTexture(renderer->prevTargetTexture);
-}
-
 void drawCircle(float x, float y, float radius, int colour) {
+	if (!renderer->enabled) return;
+
 	setShaderProgram(renderer->circleProgram.program);
 	CheckGlError();
 
-	x -= radius/2;
-	y -= radius/2;
+	x -= radius;
+	y -= radius;
 
 	x -= renderer->camera.x;
 	y -= renderer->camera.y;
+
+	radius *= 2;
 
 	glEnableVertexAttribArray(renderer->circleProgram.a_position);
 	changeArrayBuffer(renderer->tempVerts, x, y, x+radius, y+radius);
@@ -388,6 +511,8 @@ void drawCircle(float x, float y, float radius, int colour) {
 }
 
 void drawTexture(Texture *texture, RenderProps *addedProps) {
+	if (!renderer->enabled) return;
+
 	RenderProps newProps = *addedProps;
 	RenderProps *props = &newProps;
 	if (props->srcWidth == 0) props->srcWidth = texture->width;
@@ -410,7 +535,7 @@ void drawTexture(Texture *texture, RenderProps *addedProps) {
 	glVertexAttribPointer(renderer->defaultProgram.a_texCoord, 2, GL_FLOAT, false, 0, 0);
 	CheckGlError();
 
-	Point camOff = {renderer->camera.x*props->scrollFactor, renderer->camera.y*props->scrollFactor};
+	Vec2 camOff = {renderer->camera.x*props->scrollFactor, renderer->camera.y*props->scrollFactor};
 
 	Matrix3 matrix;
 	matrix.identity();
@@ -425,8 +550,20 @@ void drawTexture(Texture *texture, RenderProps *addedProps) {
 	matrix.translate(props->localX, props->localY);
 
 	glUniformMatrix3fv(renderer->defaultProgram.u_matrix, 1, false, (float *)matrix.data);
+	glUniform1i(renderer->defaultProgram.u_texture, 0);
 
-	setTexture(texture->id);
+	glActiveTexture(GL_TEXTURE0);
+	glBindTexture(renderer->texture2dType, texture->id);
+
+	if (renderer->texture2dType == GL_TEXTURE_2D) {
+		if (props->smooth) {
+			glTexParameteri(renderer->texture2dType, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+			glTexParameteri(renderer->texture2dType, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+		} else {
+			glTexParameteri(renderer->texture2dType, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+			glTexParameteri(renderer->texture2dType, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+		}
+	}
 
 	Matrix3 uv;
 	uv.identity();
@@ -455,6 +592,8 @@ void drawTexture(Texture *texture, RenderProps *addedProps) {
 }
 
 void drawTiles(Texture *srcTexture, int destWidth, int destHeight, int tileWidth, int tileHeight, int tilesWide, int tilesHigh, int *tiles) {
+	if (!renderer->enabled) return;
+
 	unsigned char *texData = (unsigned char *)malloc(tilesWide * tilesHigh * 4);
 
 	memset(texData, 0, tilesWide * tilesHigh * 4);
@@ -493,10 +632,12 @@ void drawTiles(Texture *srcTexture, int destWidth, int destHeight, int tileWidth
 	glUniformMatrix3fv(renderer->tilemapProgram.u_matrix, 1, false, (float *)(&projection.data));
 	CheckGlError();
 
-	setTexture(tempTex->id, 0);
+	glActiveTexture(GL_TEXTURE0);
+	glBindTexture(renderer->texture2dType, tempTex->id);
 	glUniform1i(renderer->tilemapProgram.u_tilemapTexture, 0);
 
-	setTexture(srcTexture->id, 1);
+	glActiveTexture(GL_TEXTURE1);
+	glBindTexture(renderer->texture2dType, srcTexture->id);
 	glUniform1i(renderer->tilemapProgram.u_tilesetTexture, 1);
 
 	glUniform2i(renderer->tilemapProgram.u_tilemapSize, tilesWide, tilesHigh);
@@ -512,76 +653,206 @@ void drawTiles(Texture *srcTexture, int destWidth, int destHeight, int tileWidth
 	CheckGlError();
 }
 
-void drawOneBppBitmap(void *bitmapData, RenderProps *addedProps) {
-	RenderProps newProps = *addedProps;
-	RenderProps *props = &newProps;
+void draw3dTriangle(Texture *texture) {
+	if (!renderer->enabled) return;
 
-	Texture *tempTex = uploadTexture(bitmapData, props->srcWidth, props->srcHeight);
+	setShaderProgram(renderer->tri3dProgram.program);
 
-	setShaderProgram(renderer->oneBppProgram.program);
+	GLfloat data[15] = {
+		(float)-0.8, (float)-0.8, (float)0.0, (float)0.0, (float)0.0,
+		 (float)0.8, (float)-0.8, (float)0.0, (float)1.0, (float)0.0,
+		 (float)0.0,  (float)0.8, (float)0.0, (float)0.5, (float)1.0
+	};
+
+	glEnableVertexAttribArray(renderer->tri3dProgram.a_position);
+	changeArrayBuffer(renderer->tempVerts, data, 15);
+	glVertexAttribPointer(renderer->tri3dProgram.a_position, 3, GL_FLOAT, false, sizeof(GLfloat)*5, NULL);
 	CheckGlError();
 
-	glEnableVertexAttribArray(renderer->oneBppProgram.a_position);
-	changeArrayBuffer(renderer->tempVerts, 0, 0, props->srcWidth, props->srcHeight);
-	glVertexAttribPointer(renderer->oneBppProgram.a_position, 2, GL_FLOAT, false, 0, NULL);
+	glEnableVertexAttribArray(renderer->tri3dProgram.a_texCoord);
+	glVertexAttribPointer(renderer->tri3dProgram.a_texCoord, 2, GL_FLOAT, false, sizeof(GLfloat)*5, (void *)(sizeof(GLfloat)*3));
 	CheckGlError();
 
-	float texX = (float)props->srcX/props->srcWidth;
-	float texY = (float)props->srcY/props->srcHeight;
-	float texW = (float)props->srcWidth/props->srcWidth;
-	float texH = (float)props->srcHeight/props->srcHeight;
-	changeArrayBuffer(renderer->tempTexCoords, texX, texY, texX + texW, texY + texH);
-	glEnableVertexAttribArray(renderer->oneBppProgram.a_texCoord);
-	glVertexAttribPointer(renderer->oneBppProgram.a_texCoord, 2, GL_FLOAT, false, 0, 0);
+	glActiveTexture(GL_TEXTURE0);
+	glBindTexture(renderer->texture2dType, texture->id);
+	glUniform1i(renderer->tri3dProgram.u_texture, 0);
+
+	glDrawArrays(GL_TRIANGLES, 0, 3);
+	CheckGlError();
+
+	glDisableVertexAttribArray(renderer->tri3dProgram.a_position);
+	glDisableVertexAttribArray(renderer->tri3dProgram.a_texCoord);
+	CheckGlError();
+}
+
+void blitFramebuffer(Texture *tex) {
+	if (!renderer->enabled) return;
+
+	resetTargetTexture();
+	CheckGlError();
+	glBindFramebuffer(GL_READ_FRAMEBUFFER, renderer->textureFramebuffer);
+	glFramebufferTexture2D(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, renderer->texture2dType, tex->id, 0);
+	glReadBuffer(GL_COLOR_ATTACHMENT0);
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+
+	glBlitFramebuffer(
+		0, 0, renderer->screenWidth, renderer->screenHeight,
+		0, 0, renderer->screenWidth, renderer->screenHeight,
+		GL_COLOR_BUFFER_BIT,
+		GL_NEAREST
+	);
+	glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
+	CheckGlError();
+}
+
+void drawInverted(Texture *texture) {
+	if (!renderer->enabled) return;
+
+	setShaderProgram(renderer->effectProgram.program);
+	CheckGlError();
+
+	glEnableVertexAttribArray(renderer->effectProgram.a_position);
+	changeArrayBuffer(renderer->tempVerts, 0, 0, texture->width, texture->height);
+	glVertexAttribPointer(renderer->effectProgram.a_position, 2, GL_FLOAT, false, 0, NULL);
+	CheckGlError();
+
+	glEnableVertexAttribArray(renderer->effectProgram.a_texCoord);
+	changeArrayBuffer(renderer->tempTexCoords, 0, 0, 1, 1);
+	glVertexAttribPointer(renderer->effectProgram.a_texCoord, 2, GL_FLOAT, false, 0, 0);
 	CheckGlError();
 
 	Matrix3 matrix;
 	matrix.identity();
 	matrix.project(renderer->currentViewport.width, renderer->currentViewport.height);
-	matrix.translate(props->x, props->y);
 
-	matrix.translate(props->pivotX, props->pivotY);
-	matrix.rotate(-props->rotation);
-	matrix.scale(props->scaleX, props->scaleY);
-	matrix.translate(-props->pivotX, -props->pivotY);
+	glUniformMatrix3fv(renderer->effectProgram.u_matrix, 1, false, (float *)matrix.data);
 
-	matrix.translate(props->localX, props->localY);
+	glUniform1i(renderer->effectProgram.u_invert, 1);
 
-	glUniformMatrix3fv(renderer->oneBppProgram.u_matrix, 1, false, (float *)matrix.data);
-
-	setTexture(tempTex->id);
-
-	Matrix3 uv;
-	uv.identity();
-	// uv.scale(1, -1); // Flip UVs to opengl format
-	// uv.translate(0, -1); // Flip UVs to opengl format
-	glUniformMatrix3fv(renderer->oneBppProgram.u_uv, 1, false, (float *)uv.data);
-
-	glUniform4f(
-		renderer->oneBppProgram.u_tint,
-		((props->tint >> 16) & 0xff)/255.0,
-		((props->tint >> 8) & 0xff)/255.0,
-		(props->tint & 0xff)/255.0,
-		((props->tint >> 24) & 0xff)/255.0
-	);
-
-	glUniform1f(renderer->oneBppProgram.u_alpha, props->alpha);
+	glActiveTexture(GL_TEXTURE0);
+	glBindTexture(renderer->texture2dType, texture->id);
 
 	CheckGlError();
 
 	glDrawArrays(GL_TRIANGLES, 0, 2*3);
 	CheckGlError();
 
-	destroyTexture(tempTex);
-	glDisableVertexAttribArray(renderer->oneBppProgram.a_position);
-	glDisableVertexAttribArray(renderer->oneBppProgram.a_texCoord);
+	glDisableVertexAttribArray(renderer->effectProgram.a_position);
+	glDisableVertexAttribArray(renderer->effectProgram.a_texCoord);
 	CheckGlError();
-}
+};
 
+void drawOutlined(Texture *texture, int outlineColour, float outlineSize) {
+	if (!renderer->enabled) return;
+
+	setShaderProgram(renderer->outlineProgram.program);
+	CheckGlError();
+
+	glEnableVertexAttribArray(renderer->outlineProgram.a_position);
+	changeArrayBuffer(renderer->tempVerts, 0, 0, texture->width, texture->height);
+	glVertexAttribPointer(renderer->outlineProgram.a_position, 2, GL_FLOAT, false, 0, NULL);
+	CheckGlError();
+
+	glEnableVertexAttribArray(renderer->outlineProgram.a_texCoord);
+	changeArrayBuffer(renderer->tempTexCoords, 0, 0, 1, 1);
+	glVertexAttribPointer(renderer->outlineProgram.a_texCoord, 2, GL_FLOAT, false, 0, 0);
+	CheckGlError();
+
+	Matrix3 matrix;
+	matrix.identity();
+	matrix.project(renderer->currentViewport.width, renderer->currentViewport.height);
+
+	glUniformMatrix3fv(renderer->outlineProgram.u_matrix, 1, false, (float *)matrix.data);
+
+	glUniform2f(renderer->outlineProgram.u_viewportInverse, 1.0/texture->width, 1.0/texture->height);
+	glUniform1f(renderer->outlineProgram.u_outlineSize, outlineSize);
+
+	glUniform4f(
+		renderer->outlineProgram.u_outlineColour,
+		((outlineColour >> 16) & 0xff)/255.0,
+		((outlineColour >> 8) & 0xff)/255.0,
+		(outlineColour & 0xff)/255.0,
+		((outlineColour >> 24) & 0xff)/255.0
+	);
+
+	glActiveTexture(GL_TEXTURE0);
+	glBindTexture(renderer->texture2dType, texture->id);
+
+	CheckGlError();
+
+	glDrawArrays(GL_TRIANGLES, 0, 2*3);
+	CheckGlError();
+
+	glDisableVertexAttribArray(renderer->outlineProgram.a_position);
+	glDisableVertexAttribArray(renderer->outlineProgram.a_texCoord);
+	CheckGlError();
+};
+
+void drawGaussianBlurredX(Texture *texture) {
+	if (!renderer->enabled) return;
+
+	setShaderProgram(renderer->gaussianBlurXProgram.program);
+	CheckGlError();
+
+	glEnableVertexAttribArray(renderer->gaussianBlurXProgram.a_position);
+	changeArrayBuffer(renderer->tempVerts, 0, 0, texture->width, texture->height);
+	glVertexAttribPointer(renderer->gaussianBlurXProgram.a_position, 2, GL_FLOAT, false, 0, NULL);
+	CheckGlError();
+
+	Matrix3 matrix;
+	matrix.identity();
+	matrix.project(renderer->currentViewport.width, renderer->currentViewport.height);
+
+	glUniformMatrix3fv(renderer->gaussianBlurXProgram.u_matrix, 1, false, (float *)matrix.data);
+
+	glUniform2f(renderer->gaussianBlurXProgram.u_imageSize, texture->width, texture->height);
+
+	glActiveTexture(GL_TEXTURE0);
+	glBindTexture(renderer->texture2dType, texture->id);
+
+	CheckGlError();
+
+	glDrawArrays(GL_TRIANGLES, 0, 2*3);
+	CheckGlError();
+
+	glDisableVertexAttribArray(renderer->gaussianBlurXProgram.a_position);
+	CheckGlError();
+};
+
+void drawGaussianBlurredY(Texture *texture) {
+	if (!renderer->enabled) return;
+
+	setShaderProgram(renderer->gaussianBlurYProgram.program);
+	CheckGlError();
+
+	glEnableVertexAttribArray(renderer->gaussianBlurYProgram.a_position);
+	changeArrayBuffer(renderer->tempVerts, 0, 0, texture->width, texture->height);
+	glVertexAttribPointer(renderer->gaussianBlurYProgram.a_position, 2, GL_FLOAT, false, 0, NULL);
+	CheckGlError();
+
+	Matrix3 matrix;
+	matrix.identity();
+	matrix.project(renderer->currentViewport.width, renderer->currentViewport.height);
+
+	glUniformMatrix3fv(renderer->gaussianBlurYProgram.u_matrix, 1, false, (float *)matrix.data);
+
+	glUniform2f(renderer->gaussianBlurYProgram.u_imageSize, texture->width, texture->height);
+
+	glActiveTexture(GL_TEXTURE0);
+	glBindTexture(renderer->texture2dType, texture->id);
+
+	CheckGlError();
+
+	glDrawArrays(GL_TRIANGLES, 0, 2*3);
+	CheckGlError();
+
+	glDisableVertexAttribArray(renderer->gaussianBlurYProgram.a_position);
+	CheckGlError();
+};
 
 Texture *uploadPngTexturePath(const char *path) {
-	void *pngData;
-	int pngSize = readFile(path, &pngData);
+	int pngSize;
+	void *pngData = readFile(path, &pngSize);
 	Texture *tex = uploadPngTexture(pngData, pngSize);
 
 	if (!tex) {
@@ -611,39 +882,38 @@ Texture *uploadPngTexture(void *data, int size) {
 Texture *uploadTexture(void *data, int width, int height) {
 	GLuint texId;
 	glGenTextures(1, &texId);
-	setTexture(texId);
+	glActiveTexture(GL_TEXTURE0);
+	glBindTexture(renderer->texture2dType, texId);
 
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-
-	bool freeData = false;
-	if (!data) {
-		freeData = true;
-		data = malloc(width * height * 4);
-		memset(data, 0, width * height * 4);
+	if (renderer->texture2dType == GL_TEXTURE_2D_MULTISAMPLE) {
+		glTexImage2DMultisample(renderer->texture2dType, 4, GL_RGBA, width, height, GL_FALSE);
+	} else {
+		if (renderer->texture2dType == GL_TEXTURE_2D) {
+			glTexParameteri(renderer->texture2dType, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+			glTexParameteri(renderer->texture2dType, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+		}
+		glTexParameteri(renderer->texture2dType, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+		glTexParameteri(renderer->texture2dType, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+		glTexImage2D(renderer->texture2dType, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
 	}
 
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
 	CheckGlError();
-
-	if (freeData) free(data);
 
 	Texture *tex = (Texture *)malloc(sizeof(Texture));
 	tex->id = texId;
 	tex->width = width;
 	tex->height = height;
+	if (data) setTextureData(tex, data, width, height);
 
 	return tex;
 }
 
-void setTextureData(Texture *texture, void *data, int width, int height);
 void setTextureData(Texture *texture, void *data, int width, int height) {
-	setTexture(texture->id);
+	glActiveTexture(GL_TEXTURE0);
+	glBindTexture(renderer->texture2dType, texture->id);
 
 	// void glTexImage2D(GLuint texture, GLint level, GLint xoffset, GLint yoffset, GLsizei width, GLsizei height, GLenum format, GLenum type, const void *pixels)
-	glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, data);
+	glTexSubImage2D(renderer->texture2dType, 0, 0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, data);
 	CheckGlError();
 }
 
@@ -654,16 +924,7 @@ void setShaderProgram(GLuint program) {
 	renderer->curShaderProgram = program;
 }
 
-void setArrayBuffer(GLuint buffer) {
-	if (renderer->curArrayBuffer == buffer) return;
-
-	glBindBuffer(GL_ARRAY_BUFFER, buffer);
-	renderer->curArrayBuffer = buffer;
-}
-
 void changeArrayBuffer(GLuint buffer, float x, float y, float width, float height) {
-	setArrayBuffer(buffer);
-
 	float bufferData[12] = {
 		x, y,
 		width, y,
@@ -673,48 +934,16 @@ void changeArrayBuffer(GLuint buffer, float x, float y, float width, float heigh
 		width, height
 	};
 
-	glBufferData(GL_ARRAY_BUFFER, sizeof(bufferData), bufferData, GL_DYNAMIC_DRAW);
+	changeArrayBuffer(buffer, bufferData, 12);
 }
 
-GLuint genGlArrayBuffer(float x, float y, float width, float height) {
-	GLuint buffer;
-	glGenBuffers(1, &buffer);
-	changeArrayBuffer(buffer, x, y, width, height);
-	CheckGlError();
-	return buffer;
-}
+void changeArrayBuffer(GLuint buffer, float *verts, int vertsNum) {
+	glBindBuffer(GL_ARRAY_BUFFER, buffer);
 
-void setTexture(GLuint texture, int slot) {
-	if (renderer->currentTexture == texture) return;
-	renderer->currentTexture = texture;
-	if (slot == 0) glActiveTexture(GL_TEXTURE0);
-	if (slot == 1) glActiveTexture(GL_TEXTURE1);
-	glBindTexture(GL_TEXTURE_2D, texture);
-	CheckGlError();
-}
-
-void setFramebuffer(GLuint framebuffer) {
-	if (renderer->currentFramebuffer == framebuffer) return;
-
-	// I think these are required
-	renderer->currentFramebufferTexture = -1;
-	renderer->currentTexture = -1;
-
-	renderer->currentFramebuffer = framebuffer;
-	glBindFramebuffer(GL_FRAMEBUFFER, framebuffer);
-	CheckGlError();
-}
-
-void setFramebufferTexture(GLuint texture) {
-	if (renderer->currentFramebufferTexture == texture) return;
-	renderer->currentFramebufferTexture = texture;
-
-	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, texture, 0);
-	CheckGlError();
+	glBufferData(GL_ARRAY_BUFFER, sizeof(GL_FLOAT) * vertsNum, verts, GL_DYNAMIC_DRAW);
 }
 
 void setViewport(float x, float y, float w, float h) {
-	if (renderer->currentViewport.x == x && renderer->currentViewport.y == y && renderer->currentViewport.width == w && renderer->currentViewport.height == h) return;
 	renderer->currentViewport.setTo(x, y, w, h);
 	glViewport(x, y, w, h);
 	CheckGlError();
@@ -726,8 +955,12 @@ void destroyTexture(Texture *tex) {
 }
 
 void checkGlError(int lineNum) {
-	GLenum err;
-	while ((err = glGetError()) != GL_NO_ERROR) {
+	if (!renderer->enabled) return;
+#ifndef __EMSCRIPTEN__
+	for (;;) {
+		GLenum err = glGetError();
+		if (err == GL_NO_ERROR) break;
+
 		if (renderer->errorCount < 10) {
 			printf("Gl error: %x(%d) at line %d\n", err, err, lineNum);
 			renderer->errorCount++;
@@ -738,4 +971,5 @@ void checkGlError(int lineNum) {
 			}
 		}
 	}
+#endif
 }

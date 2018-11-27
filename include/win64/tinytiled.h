@@ -1248,39 +1248,41 @@ char tinytiled_parse_char(char c)
 
 static int tinytiled_read_string_internal(tinytiled_map_internal_t* m)
 {
-	tinytiled_expect(m, '"');
-
-	int count = 0;
-	int done = 0;
-	while (!done)
 	{
-		TINYTILED_CHECK(count < TINYTILED_INTERNAL_BUFFER_MAX, "String exceeded max length of TINYTILED_INTERNAL_BUFFER_MAX.");
-		char c = tinytiled_next(m);
+		tinytiled_expect(m, '"');
 
-		switch (c)
+		int count = 0;
+		int done = 0;
+		while (!done)
 		{
-		case '"':
-			m->scratch[count] = 0;
-			done = 1;
-			break;
+			TINYTILED_CHECK(count < TINYTILED_INTERNAL_BUFFER_MAX, "String exceeded max length of TINYTILED_INTERNAL_BUFFER_MAX.");
+			char c = tinytiled_next(m);
 
-		case '\\':
-		{
-			char the_char = tinytiled_parse_char(tinytiled_next(m));
-			m->scratch[count++] = the_char;
-		}	break;
+			switch (c)
+			{
+				case '"':
+					m->scratch[count] = 0;
+					done = 1;
+					break;
 
-		default:
-			m->scratch[count++] = c;
-			break;
+				case '\\':
+					{
+						char the_char = tinytiled_parse_char(tinytiled_next(m));
+						m->scratch[count++] = the_char;
+					}	break;
+
+				default:
+					m->scratch[count++] = c;
+					break;
+			}
 		}
+
+		m->scratch_len = count;
+		return 1;
 	}
 
-	m->scratch_len = count;
-	return 1;
-
-tinytiled_err:
-	return 0;
+	tinytiled_err:
+		return 0;
 }
 
 #define tinytiled_read_string(m) \
@@ -1290,15 +1292,17 @@ tinytiled_err:
 
 static int tinytiled_read_int_internal(tinytiled_map_internal_t* m, int* out)
 {
-	char* end;
-	int val = (int)strtoll(m->in, &end, 10);
-	TINYTILED_CHECK(m->in != end, "Invalid integer found during parse.");
-	m->in = end;
-	*out = val;
-	return 1;
+	{
+		char* end;
+		int val = (int)strtoll(m->in, &end, 10);
+		TINYTILED_CHECK(m->in != end, "Invalid integer found during parse.");
+		m->in = end;
+		*out = val;
+		return 1;
+	}
 
-tinytiled_err:
-	return 0;
+	tinytiled_err:
+		return 0;
 }
 
 #define tinytiled_read_int(m, num) \
@@ -1308,26 +1312,28 @@ tinytiled_err:
 
 static int tinytiled_read_hex_int_internal(tinytiled_map_internal_t* m, int* out)
 {
-	switch (tinytiled_peak(m))
 	{
-	case '#':
-		tinytiled_next(m);
-		break;
+		switch (tinytiled_peak(m))
+		{
+			case '#':
+				tinytiled_next(m);
+				break;
 
-	case '0':
-	{
-		tinytiled_next(m);
-		char c = tinytiled_next(m);
-		TINYTILED_CHECK((c == 'x') | (c == 'X'), "Expected 'x' or 'X' while parsing a hex number.");
-	}	break;
+			case '0':
+				{
+					tinytiled_next(m);
+					char c = tinytiled_next(m);
+					TINYTILED_CHECK((c == 'x') | (c == 'X'), "Expected 'x' or 'X' while parsing a hex number.");
+				}	break;
+		}
+
+		char* end;
+		int val = strtol(m->in, &end, 16);
+		TINYTILED_CHECK(m->in != end, "Invalid integer found during parse.");
+		m->in = end;
+		*out = val;
+		return 1;
 	}
-
-	char* end;
-	int val = strtol(m->in, &end, 16);
-	TINYTILED_CHECK(m->in != end, "Invalid integer found during parse.");
-	m->in = end;
-	*out = val;
-	return 1;
 
 tinytiled_err:
 	return 0;
@@ -1340,12 +1346,14 @@ tinytiled_err:
 
 static int tinytiled_read_float_internal(tinytiled_map_internal_t* m, float* out)
 {
-	char* end;
-	float val = (float)strtod(m->in, &end);
-	TINYTILED_CHECK(m->in != end, "Invalid integer found during parse.");
-	m->in = end;
-	*out = val;
-	return 1;
+	{
+		char* end;
+		float val = (float)strtod(m->in, &end);
+		TINYTILED_CHECK(m->in != end, "Invalid integer found during parse.");
+		m->in = end;
+		*out = val;
+		return 1;
+	}
 
 tinytiled_err:
 	return 0;
@@ -1358,23 +1366,25 @@ tinytiled_err:
 
 static int tinytiled_read_bool_internal(tinytiled_map_internal_t* m, int* out)
 {
-	if ((tinytiled_peak(m) == 't') | (tinytiled_peak(m) == 'T'))
 	{
-		m->in += 4;
-		*out = 1;
+		if ((tinytiled_peak(m) == 't') | (tinytiled_peak(m) == 'T'))
+		{
+			m->in += 4;
+			*out = 1;
+		}
+
+		else if ((tinytiled_peak(m) == 'f') | (tinytiled_peak(m) == 'F'))
+		{
+			m->in += 5;
+			*out = 0;
+		}
+
+		else goto tinytiled_err;
+
+		TINYTILED_CHECK(m->in <= m->end, "Attempted to read passed input buffer (is this a valid JSON file?).");
+		return 1;
+
 	}
-
-	else if ((tinytiled_peak(m) == 'f') | (tinytiled_peak(m) == 'F'))
-	{
-		m->in += 5;
-		*out = 0;
-	}
-
-	else goto tinytiled_err;
-
-	TINYTILED_CHECK(m->in <= m->end, "Attempted to read passed input buffer (is this a valid JSON file?).");
-	return 1;
-
 tinytiled_err:
 	return 0;
 }
@@ -1386,31 +1396,33 @@ tinytiled_err:
 
 int tinytiled_read_csv_integers_internal(tinytiled_map_internal_t* m, int* count_out, int** out)
 {
-	int count = 0;
-	int capacity = 1024;
-	int* integers = (int*)TINYTILED_MALLOC(capacity * sizeof(int), m->mem_ctx);
-
-	char c;
-	do
 	{
-		int val;
-		tinytiled_read_int(m, &val);
-		if (count == capacity)
-		{
-			capacity *= 2;
-			int* new_integers = (int*)TINYTILED_MALLOC(capacity * sizeof(int), m->mem_ctx);
-			TINYTILED_MEMCPY(new_integers, integers, sizeof(int) * count);
-			TINYTILED_FREE(integers, m->mem_ctx);
-			integers = new_integers;
-		}
-		integers[count++] = val;
-		c = tinytiled_next(m);
-	}
-	while (c != ']');
+		int count = 0;
+		int capacity = 1024;
+		int* integers = (int*)TINYTILED_MALLOC(capacity * sizeof(int), m->mem_ctx);
 
-	*count_out = count;
-	*out = integers;
-	return 1;
+		char c;
+		do
+		{
+			int val;
+			tinytiled_read_int(m, &val);
+			if (count == capacity)
+			{
+				capacity *= 2;
+				int* new_integers = (int*)TINYTILED_MALLOC(capacity * sizeof(int), m->mem_ctx);
+				TINYTILED_MEMCPY(new_integers, integers, sizeof(int) * count);
+				TINYTILED_FREE(integers, m->mem_ctx);
+				integers = new_integers;
+			}
+			integers[count++] = val;
+			c = tinytiled_next(m);
+		}
+		while (c != ']');
+
+		*count_out = count;
+		*out = integers;
+		return 1;
+	}
 
 tinytiled_err:
 	return 0;
@@ -1423,20 +1435,22 @@ tinytiled_err:
 
 int tinytiled_intern_string_internal(tinytiled_map_internal_t* m, tinytiled_string_t* out)
 {
-	tinytiled_read_string(m);
+	{
+		tinytiled_read_string(m);
 
-	// Store string id inside the memory of the pointer. This is important since
-	// the string pool can relocate strings while parsing the map file at any
-	// time.
+		// Store string id inside the memory of the pointer. This is important since
+		// the string pool can relocate strings while parsing the map file at any
+		// time.
 
-	// Later there will be a second pass to patch all these string
-	// pointers by doing: *out = (const char*)strpool_embedded_cstr(&m->strpool, id);
+		// Later there will be a second pass to patch all these string
+		// pointers by doing: *out = (const char*)strpool_embedded_cstr(&m->strpool, id);
 
-	STRPOOL_EMBEDDED_U64 id = strpool_embedded_inject(&m->strpool, m->scratch, m->scratch_len);
-	// if (sizeof(const char*) < sizeof(STRPOOL_EMBEDDED_U64)) *(int*)0 = 0; // sanity check
-	out->hash_id = id;
+		STRPOOL_EMBEDDED_U64 id = strpool_embedded_inject(&m->strpool, m->scratch, m->scratch_len);
+		// if (sizeof(const char*) < sizeof(STRPOOL_EMBEDDED_U64)) *(int*)0 = 0; // sanity check
+		out->hash_id = id;
 
-	return 1;
+		return 1;
+	}
 
 tinytiled_err:
 	return 0;
@@ -1449,50 +1463,52 @@ tinytiled_err:
 
 int tinytiled_read_vertex_array_internal(tinytiled_map_internal_t* m, int* out_count, float** out_verts)
 {
-	tinytiled_expect(m, '[');
-
-	int vert_count = 0;
-	int capacity = 32;
-	float* verts = (float*)TINYTILED_MALLOC(sizeof(float) * capacity * 2, m->mem_ctx);
-
-	while (tinytiled_peak(m) != ']')
 	{
-		tinytiled_expect(m, '{');
-		tinytiled_expect(m, '"');
+		tinytiled_expect(m, '[');
 
-		int swap = tinytiled_try(m, 'x') ? 0 : 1;
-		float x = 0, y = 0;
-		tinytiled_expect(m, '"');
-		tinytiled_expect(m, ':');
-		tinytiled_read_float(m, swap ? &y : &x);
-		tinytiled_expect(m, ',');
-		tinytiled_expect(m, '"');
-		tinytiled_expect(m, swap ? 'y' : 'x');
-		tinytiled_expect(m, '"');
-		tinytiled_expect(m, ':');
-		tinytiled_read_float(m, swap ? &x : &y);
-		tinytiled_expect(m, '}');
-		tinytiled_try(m, ',');
+		int vert_count = 0;
+		int capacity = 32;
+		float* verts = (float*)TINYTILED_MALLOC(sizeof(float) * capacity * 2, m->mem_ctx);
 
-		if (vert_count == capacity)
+		while (tinytiled_peak(m) != ']')
 		{
-			capacity *= 2;
-			float* new_verts = (float*)TINYTILED_MALLOC(sizeof(float) * capacity * 2, m->mem_ctx);
-			TINYTILED_MEMCPY(new_verts, verts, sizeof(float) * 2 * vert_count);
-			TINYTILED_FREE(verts, m->mem_ctx);
-			verts = new_verts;
+			tinytiled_expect(m, '{');
+			tinytiled_expect(m, '"');
+
+			int swap = tinytiled_try(m, 'x') ? 0 : 1;
+			float x = 0, y = 0;
+			tinytiled_expect(m, '"');
+			tinytiled_expect(m, ':');
+			tinytiled_read_float(m, swap ? &y : &x);
+			tinytiled_expect(m, ',');
+			tinytiled_expect(m, '"');
+			tinytiled_expect(m, swap ? 'y' : 'x');
+			tinytiled_expect(m, '"');
+			tinytiled_expect(m, ':');
+			tinytiled_read_float(m, swap ? &x : &y);
+			tinytiled_expect(m, '}');
+			tinytiled_try(m, ',');
+
+			if (vert_count == capacity)
+			{
+				capacity *= 2;
+				float* new_verts = (float*)TINYTILED_MALLOC(sizeof(float) * capacity * 2, m->mem_ctx);
+				TINYTILED_MEMCPY(new_verts, verts, sizeof(float) * 2 * vert_count);
+				TINYTILED_FREE(verts, m->mem_ctx);
+				verts = new_verts;
+			}
+
+			verts[vert_count * 2] = x;
+			verts[vert_count * 2 + 1] = y;
+			++vert_count;
 		}
 
-		verts[vert_count * 2] = x;
-		verts[vert_count * 2 + 1] = y;
-		++vert_count;
+		tinytiled_expect(m, ']');
+		*out_count = vert_count;
+		*out_verts = verts;
+
+		return 1;
 	}
-
-	tinytiled_expect(m, ']');
-	*out_count = vert_count;
-	*out_verts = verts;
-
-	return 1;
 
 tinytiled_err:
 	return 0;
@@ -1505,126 +1521,128 @@ tinytiled_err:
 
 int tinytiled_read_properties_internal(tinytiled_map_internal_t* m, tinytiled_property_t** out_properties, int* out_count)
 {
-	int count = 0;
-	int capacity = 32;
-	tinytiled_property_t* props = (tinytiled_property_t*)TINYTILED_MALLOC(capacity * sizeof(tinytiled_property_t), m->mem_ctx);
-
-	tinytiled_expect(m, '{');
-
-	while (tinytiled_peak(m) != '}')
 	{
-		tinytiled_property_t prop;
-		prop.type = TINYTILED_PROPERTY_NONE;
+		int count = 0;
+		int capacity = 32;
+		tinytiled_property_t* props = (tinytiled_property_t*)TINYTILED_MALLOC(capacity * sizeof(tinytiled_property_t), m->mem_ctx);
 
-		tinytiled_intern_string(m, &prop.name);
-		tinytiled_expect(m, ':');
+		tinytiled_expect(m, '{');
 
-		char c = tinytiled_peak(m);
-
-		if (((c == 't') | (c == 'T')) | ((c == 'f') | (c == 'F')))
+		while (tinytiled_peak(m) != '}')
 		{
-			tinytiled_read_bool(m, &prop.data.boolean);
-			prop.type = TINYTILED_PROPERTY_BOOL;
-		}
+			tinytiled_property_t prop;
+			prop.type = TINYTILED_PROPERTY_NONE;
 
-		else if (c == '"')
-		{
-			char* s = m->in + 1;
-			int is_hex_color = 1;
+			tinytiled_intern_string(m, &prop.name);
+			tinytiled_expect(m, ':');
 
-			if (*s++ != '#') is_hex_color = 0;
-			else 
+			char c = tinytiled_peak(m);
+
+			if (((c == 't') | (c == 'T')) | ((c == 'f') | (c == 'F')))
 			{
-				while ((c = *s++) != '"')
+				tinytiled_read_bool(m, &prop.data.boolean);
+				prop.type = TINYTILED_PROPERTY_BOOL;
+			}
+
+			else if (c == '"')
+			{
+				char* s = m->in + 1;
+				int is_hex_color = 1;
+
+				if (*s++ != '#') is_hex_color = 0;
+				else 
 				{
-					switch (c)
+					while ((c = *s++) != '"')
 					{
-					case '0': case '1': case '2': case '3': case '4': case '5': case '6':
-					case '7': case '8': case '9': case 'a': case 'b': case 'c': case 'd':
-					case 'e': case 'f': case 'A': case 'B': case 'C': case 'D': case 'E': case 'F':
-						break;
+						switch (c)
+						{
+							case '0': case '1': case '2': case '3': case '4': case '5': case '6':
+							case '7': case '8': case '9': case 'a': case 'b': case 'c': case 'd':
+							case 'e': case 'f': case 'A': case 'B': case 'C': case 'D': case 'E': case 'F':
+								break;
 
-					case '\\':
-						++s;
-						break;
+							case '\\':
+								++s;
+								break;
 
-					default:
-						is_hex_color = 0;
+							default:
+								is_hex_color = 0;
+								break;
+						}
+
+						if (!is_hex_color) break;
+					}
+				}
+
+				if (is_hex_color)
+				{
+					tinytiled_expect(m, '"');
+					tinytiled_read_hex_int(m, &prop.data.integer);
+					tinytiled_expect(m, '"');
+					prop.type = TINYTILED_PROPERTY_COLOR;
+				}
+
+				else
+				{
+					tinytiled_intern_string(m, &prop.data.string);
+					prop.type = TINYTILED_PROPERTY_STRING;
+				}
+			}
+
+			else
+			{
+				char* s = m->in;
+				int is_float = 0;
+				while ((c = *s++) != ',')
+				{
+					if (c == '.')
+					{
+						is_float = 1;
 						break;
 					}
-
-					if (!is_hex_color) break;
 				}
-			}
 
-			if (is_hex_color)
-			{
-				tinytiled_expect(m, '"');
-				tinytiled_read_hex_int(m, &prop.data.integer);
-				tinytiled_expect(m, '"');
-				prop.type = TINYTILED_PROPERTY_COLOR;
-			}
-
-			else
-			{
-				tinytiled_intern_string(m, &prop.data.string);
-				prop.type = TINYTILED_PROPERTY_STRING;
-			}
-		}
-
-		else
-		{
-			char* s = m->in;
-			int is_float = 0;
-			while ((c = *s++) != ',')
-			{
-				if (c == '.')
+				if (is_float)
 				{
-					is_float = 1;
-					break;
+					tinytiled_read_float(m, &prop.data.floating);
+					prop.type = TINYTILED_PROPERTY_FLOAT;
+				}
+
+				else
+				{
+					tinytiled_read_int(m, &prop.data.integer);
+					prop.type = TINYTILED_PROPERTY_INT;
 				}
 			}
 
-			if (is_float)
+			if (count == capacity)
 			{
-				tinytiled_read_float(m, &prop.data.floating);
-				prop.type = TINYTILED_PROPERTY_FLOAT;
+				capacity *= 2;
+				tinytiled_property_t* new_props = (tinytiled_property_t*)TINYTILED_MALLOC(capacity * sizeof(tinytiled_property_t), m->mem_ctx);
+				TINYTILED_MEMCPY(new_props, props, sizeof(tinytiled_property_t) * count);
+				TINYTILED_FREE(props, m->mem_ctx);
+				props = new_props;
 			}
+			props[count++] = prop;
 
-			else
-			{
-				tinytiled_read_int(m, &prop.data.integer);
-				prop.type = TINYTILED_PROPERTY_INT;
-			}
+			tinytiled_try(m, ',');
 		}
 
-		if (count == capacity)
-		{
-			capacity *= 2;
-			tinytiled_property_t* new_props = (tinytiled_property_t*)TINYTILED_MALLOC(capacity * sizeof(tinytiled_property_t), m->mem_ctx);
-			TINYTILED_MEMCPY(new_props, props, sizeof(tinytiled_property_t) * count);
-			TINYTILED_FREE(props, m->mem_ctx);
-			props = new_props;
-		}
-		props[count++] = prop;
-
+		tinytiled_expect(m, '}');
+		tinytiled_expect(m, ',');
+		tinytiled_read_string(m); // should be "properytypes"
+		const char* propertytypes = "propertytypes";
+		for (int i = 0; i < m->scratch_len; ++i) TINYTILED_CHECK(m->scratch[i] == propertytypes[i], "Expected \"propertytypes\" string here.");
+		tinytiled_expect(m, ':');
+		tinytiled_expect(m, '{');
+		while (tinytiled_next(m) != '}'); // skip propertytypes since it's not needed
 		tinytiled_try(m, ',');
+
+		*out_properties = props;
+		*out_count = count;
+
+		return 1;
 	}
-
-	tinytiled_expect(m, '}');
-	tinytiled_expect(m, ',');
-	tinytiled_read_string(m); // should be "properytypes"
-	const char* propertytypes = "propertytypes";
-	for (int i = 0; i < m->scratch_len; ++i) TINYTILED_CHECK(m->scratch[i] == propertytypes[i], "Expected \"propertytypes\" string here.");
-	tinytiled_expect(m, ':');
-	tinytiled_expect(m, '{');
-	while (tinytiled_next(m) != '}'); // skip propertytypes since it's not needed
-	tinytiled_try(m, ',');
-
-	*out_properties = props;
-	*out_count = count;
-
-	return 1;
 
 tinytiled_err:
 	return 0;
@@ -1637,95 +1655,97 @@ tinytiled_err:
 
 tinytiled_object_t* tinytiled_read_object(tinytiled_map_internal_t* m)
 {
-	tinytiled_object_t* object = (tinytiled_object_t*)tinytiled_alloc(m, sizeof(tinytiled_object_t));
-	TINYTILED_MEMSET(object, 0, sizeof(tinytiled_object_t));
-	tinytiled_expect(m, '{');
-
-	while (tinytiled_peak(m) != '}')
 	{
-		tinytiled_read_string(m);
-		tinytiled_expect(m, ':');
-		TINYTILED_U64 h = tinytiled_FNV1a(m->scratch, m->scratch_len + 1);
+		tinytiled_object_t* object = (tinytiled_object_t*)tinytiled_alloc(m, sizeof(tinytiled_object_t));
+		TINYTILED_MEMSET(object, 0, sizeof(tinytiled_object_t));
+		tinytiled_expect(m, '{');
 
-		switch (h)
+		while (tinytiled_peak(m) != '}')
 		{
-		case 14479365350473253539U: // ellipse
-			tinytiled_read_bool(m, &object->ellipse);
-			break;
+			tinytiled_read_string(m);
+			tinytiled_expect(m, ':');
+			TINYTILED_U64 h = tinytiled_FNV1a(m->scratch, m->scratch_len + 1);
 
-		case 14992147199312073281U: // gid
-			tinytiled_read_int(m, &object->gid);
-			break;
+			switch (h)
+			{
+				case 14479365350473253539U: // ellipse
+					tinytiled_read_bool(m, &object->ellipse);
+					break;
 
-		case 809651598226485190U: // height
-			tinytiled_read_int(m, &object->height);
-			break;
+				case 14992147199312073281U: // gid
+					tinytiled_read_int(m, &object->gid);
+					break;
 
-		case 3133932603199444032U: // id
-			tinytiled_read_int(m, &object->id);
-			break;
+				case 809651598226485190U: // height
+					tinytiled_read_int(m, &object->height);
+					break;
 
-		case 12661511911333414066U: // name
-			tinytiled_intern_string(m, &object->name);
-			break;
+				case 3133932603199444032U: // id
+					tinytiled_read_int(m, &object->id);
+					break;
 
-		case 15925463322410838979U: // point
-			tinytiled_read_bool(m, &object->point);
-			break;
+				case 12661511911333414066U: // name
+					tinytiled_intern_string(m, &object->name);
+					break;
 
-		case 11191351929714760271U: // polyline
-			tinytiled_read_vertex_array(m, &object->vert_count, &object->vertices);
-			object->vert_type = 0;
-			break;
+				case 15925463322410838979U: // point
+					tinytiled_read_bool(m, &object->point);
+					break;
 
-		case 6623316362411997547U: // polygon
-			tinytiled_read_vertex_array(m, &object->vert_count, &object->vertices);
-			object->vert_type = 1;
-			break;
+				case 11191351929714760271U: // polyline
+					tinytiled_read_vertex_array(m, &object->vert_count, &object->vertices);
+					object->vert_type = 0;
+					break;
 
-		case 8368542207491637236U: // properties
-			tinytiled_read_properties(m, &object->properties, &object->property_count);
-			break;
+				case 6623316362411997547U: // polygon
+					tinytiled_read_vertex_array(m, &object->vert_count, &object->vertices);
+					object->vert_type = 1;
+					break;
 
-		case 17386473859969670701U: // rotation
-			tinytiled_read_float(m, &object->rotation);
-			break;
+				case 8368542207491637236U: // properties
+					tinytiled_read_properties(m, &object->properties, &object->property_count);
+					break;
 
-		case 7758770083360183834U: // text
-			TINYTILED_WARNING("Text field of Tiled objects is not yet supported.");
-			while (tinytiled_peak(m) != '}') tinytiled_next(m);
-			tinytiled_expect(m, '}');
-			break;
+				case 17386473859969670701U: // rotation
+					tinytiled_read_float(m, &object->rotation);
+					break;
 
-		case 13509284784451838071U: // type
-			tinytiled_intern_string(m, &object->type);
-			break;
+				case 7758770083360183834U: // text
+					TINYTILED_WARNING("Text field of Tiled objects is not yet supported.");
+					while (tinytiled_peak(m) != '}') tinytiled_next(m);
+					tinytiled_expect(m, '}');
+					break;
 
-		case 128234417907068947U: // visible
-			tinytiled_read_bool(m, &object->visible);
-			break;
+				case 13509284784451838071U: // type
+					tinytiled_intern_string(m, &object->type);
+					break;
 
-		case 7400839267610537869U: // width
-			tinytiled_read_int(m, &object->width);
-			break;
+				case 128234417907068947U: // visible
+					tinytiled_read_bool(m, &object->visible);
+					break;
 
-		case 644252274336276709U: // x
-			tinytiled_read_float(m, &object->x);
-			break;
+				case 7400839267610537869U: // width
+					tinytiled_read_int(m, &object->width);
+					break;
 
-		case 643295699219922364U: // y
-			tinytiled_read_float(m, &object->y);
-			break;
+				case 644252274336276709U: // x
+					tinytiled_read_float(m, &object->x);
+					break;
 
-		default:
-			TINYTILED_CHECK(0, "Unknown identifier found.");
+				case 643295699219922364U: // y
+					tinytiled_read_float(m, &object->y);
+					break;
+
+				default:
+					TINYTILED_CHECK(0, "Unknown identifier found.");
+			}
+
+			tinytiled_try(m, ',');
 		}
 
-		tinytiled_try(m, ',');
+		tinytiled_expect(m, '}');
+		return object;
 	}
-
-	tinytiled_expect(m, '}');
-	return object;
 
 tinytiled_err:
 	return 0;
@@ -1733,111 +1753,113 @@ tinytiled_err:
 
 tinytiled_layer_t* tinytiled_layers(tinytiled_map_internal_t* m)
 {
-	tinytiled_layer_t* layer = (tinytiled_layer_t*)tinytiled_alloc(m, sizeof(tinytiled_layer_t));
-	TINYTILED_MEMSET(layer, 0, sizeof(tinytiled_layer_t));
-	tinytiled_expect(m, '{');
-
-	while (tinytiled_peak(m) != '}')
 	{
-		tinytiled_read_string(m);
-		tinytiled_expect(m, ':');
-		TINYTILED_U64 h = tinytiled_FNV1a(m->scratch, m->scratch_len + 1);
+		tinytiled_layer_t* layer = (tinytiled_layer_t*)tinytiled_alloc(m, sizeof(tinytiled_layer_t));
+		TINYTILED_MEMSET(layer, 0, sizeof(tinytiled_layer_t));
+		tinytiled_expect(m, '{');
 
-		switch (h)
+		while (tinytiled_peak(m) != '}')
 		{
-		case 14868627273436340303U: // compression
-			TINYTILED_CHECK(0, "Compression is not yet supported. The expected tile format is CSV (uncompressed). Please see the docs if you are interested in compression.");
-			break;
+			tinytiled_read_string(m);
+			tinytiled_expect(m, ':');
+			TINYTILED_U64 h = tinytiled_FNV1a(m->scratch, m->scratch_len + 1);
 
-		case 4430454992770877055U: // data
-			TINYTILED_CHECK(tinytiled_peak(m) == '[', "The expected tile format is CSV (uncompressed). It looks like Base64 (uncompressed) was selected. Please see the docs if you are interested in compression.");
-			tinytiled_expect(m, '[');
-			tinytiled_read_csv_integers(m, &layer->data_count, &layer->data);
-			break;
+			switch (h)
+			{
+				case 14868627273436340303U: // compression
+					TINYTILED_CHECK(0, "Compression is not yet supported. The expected tile format is CSV (uncompressed). Please see the docs if you are interested in compression.");
+					break;
 
-		case 1888774307506158416U: // encoding
-			TINYTILED_CHECK(0, "Encoding is not yet supported. The expected tile format is CSV (uncompressed). Please see the docs if you are interested in compression.");
-			break;
+				case 4430454992770877055U: // data
+					TINYTILED_CHECK(tinytiled_peak(m) == '[', "The expected tile format is CSV (uncompressed). It looks like Base64 (uncompressed) was selected. Please see the docs if you are interested in compression.");
+					tinytiled_expect(m, '[');
+					tinytiled_read_csv_integers(m, &layer->data_count, &layer->data);
+					break;
 
-		case 2841939415665718447U: // draworder
-			tinytiled_intern_string(m, &layer->draworder);
-			break;
+				case 1888774307506158416U: // encoding
+					TINYTILED_CHECK(0, "Encoding is not yet supported. The expected tile format is CSV (uncompressed). Please see the docs if you are interested in compression.");
+					break;
 
-		case 809651598226485190U: // height
-			tinytiled_read_int(m, &layer->height);
-			break;
+				case 2841939415665718447U: // draworder
+					tinytiled_intern_string(m, &layer->draworder);
+					break;
 
-		case 4566956252693479661U: // layers
-		tinytiled_expect(m, '[');
+				case 809651598226485190U: // height
+					tinytiled_read_int(m, &layer->height);
+					break;
 
-		while (tinytiled_peak(m) != ']')
-		{
-			tinytiled_layer_t* child_layer = tinytiled_layers(m);
-			TINYTILED_FAIL_IF(!child_layer);
-			child_layer->next = layer->layers;
-			layer->layers = child_layer;
+				case 4566956252693479661U: // layers
+					tinytiled_expect(m, '[');
+
+					while (tinytiled_peak(m) != ']')
+					{
+						tinytiled_layer_t* child_layer = tinytiled_layers(m);
+						TINYTILED_FAIL_IF(!child_layer);
+						child_layer->next = layer->layers;
+						layer->layers = child_layer;
+						tinytiled_try(m, ',');
+					}
+
+					tinytiled_expect(m, ']');
+					break;
+
+				case 12661511911333414066U: // name
+					tinytiled_intern_string(m, &layer->name);
+					break;
+
+				case 107323337999513585U: // objects
+					tinytiled_expect(m, '[');
+
+					while (tinytiled_peak(m) != ']')
+					{
+						tinytiled_object_t* object = tinytiled_read_object(m);
+						TINYTILED_FAIL_IF(!object);
+						object->next = layer->objects;
+						layer->objects = object;
+						tinytiled_try(m, ',');
+					}
+
+					tinytiled_expect(m, ']');
+					break;
+
+				case 11746902372727406098U: // opacity
+					tinytiled_read_float(m, &layer->opacity);
+					break;
+
+				case 8368542207491637236U: // properties
+					tinytiled_read_properties(m, &layer->properties, &layer->property_count);
+					break;
+
+				case 13509284784451838071U: // type
+					tinytiled_intern_string(m, &layer->type);
+					break;
+
+				case 128234417907068947U: // visible
+					tinytiled_read_bool(m, &layer->visible);
+					break;
+
+				case 7400839267610537869U: // width
+					tinytiled_read_int(m, &layer->width);
+					break;
+
+				case 644252274336276709U: // x
+					tinytiled_read_int(m, &layer->x);
+					break;
+
+				case 643295699219922364U: // y
+					tinytiled_read_int(m, &layer->y);
+					break;
+
+				default:
+					TINYTILED_CHECK(0, "Unknown identifier found.");
+			}
+
 			tinytiled_try(m, ',');
 		}
 
-		tinytiled_expect(m, ']');
-		break;
-
-		case 12661511911333414066U: // name
-			tinytiled_intern_string(m, &layer->name);
-			break;
-
-		case 107323337999513585U: // objects
-			tinytiled_expect(m, '[');
-
-			while (tinytiled_peak(m) != ']')
-			{
-				tinytiled_object_t* object = tinytiled_read_object(m);
-				TINYTILED_FAIL_IF(!object);
-				object->next = layer->objects;
-				layer->objects = object;
-				tinytiled_try(m, ',');
-			}
-
-			tinytiled_expect(m, ']');
-			break;
-
-		case 11746902372727406098U: // opacity
-			tinytiled_read_float(m, &layer->opacity);
-			break;
-
-		case 8368542207491637236U: // properties
-			tinytiled_read_properties(m, &layer->properties, &layer->property_count);
-			break;
-
-		case 13509284784451838071U: // type
-			tinytiled_intern_string(m, &layer->type);
-			break;
-
-		case 128234417907068947U: // visible
-			tinytiled_read_bool(m, &layer->visible);
-			break;
-
-		case 7400839267610537869U: // width
-			tinytiled_read_int(m, &layer->width);
-			break;
-
-		case 644252274336276709U: // x
-			tinytiled_read_int(m, &layer->x);
-			break;
-
-		case 643295699219922364U: // y
-			tinytiled_read_int(m, &layer->y);
-			break;
-
-		default:
-			TINYTILED_CHECK(0, "Unknown identifier found.");
-		}
-
-		tinytiled_try(m, ',');
+		tinytiled_expect(m, '}');
+		return layer;
 	}
-
-	tinytiled_expect(m, '}');
-	return layer;
 
 tinytiled_err:
 	return 0;
@@ -1845,83 +1867,85 @@ tinytiled_err:
 
 tinytiled_tileset_t* tinytiled_tileset(tinytiled_map_internal_t* m)
 {
-	tinytiled_tileset_t* tileset = (tinytiled_tileset_t*)tinytiled_alloc(m, sizeof(tinytiled_tileset_t));
-	TINYTILED_MEMSET(tileset, 0, sizeof(tinytiled_tileset_t));
-	tinytiled_expect(m, '{');
-
-	while (tinytiled_peak(m) != '}')
 	{
-		tinytiled_read_string(m);
-		tinytiled_expect(m, ':');
-		TINYTILED_U64 h = tinytiled_FNV1a(m->scratch, m->scratch_len + 1);
+		tinytiled_tileset_t* tileset = (tinytiled_tileset_t*)tinytiled_alloc(m, sizeof(tinytiled_tileset_t));
+		TINYTILED_MEMSET(tileset, 0, sizeof(tinytiled_tileset_t));
+		tinytiled_expect(m, '{');
 
-		switch (h)
+		while (tinytiled_peak(m) != '}')
 		{
-		case 12570673734542705940U: // columns
-			tinytiled_read_int(m, &tileset->columns);
-			break;
+			tinytiled_read_string(m);
+			tinytiled_expect(m, ':');
+			TINYTILED_U64 h = tinytiled_FNV1a(m->scratch, m->scratch_len + 1);
 
-		case 13956389100366699181U: // firstgid
-			tinytiled_read_int(m, &tileset->firstgid);
-			break;
+			switch (h)
+			{
+			case 12570673734542705940U: // columns
+				tinytiled_read_int(m, &tileset->columns);
+				break;
 
-		case 13522647194774232494U: // image
-			tinytiled_intern_string(m, &tileset->image);
-			break;
+			case 13956389100366699181U: // firstgid
+				tinytiled_read_int(m, &tileset->firstgid);
+				break;
 
-		case 7796197983149768626U: // imagewidth
-			tinytiled_read_int(m, &tileset->imagewidth);
-			break;
+			case 13522647194774232494U: // image
+				tinytiled_intern_string(m, &tileset->image);
+				break;
 
-		case 2114495263010514843U: // imageheight
-			tinytiled_read_int(m, &tileset->imageheight);
-			break;
+			case 7796197983149768626U: // imagewidth
+				tinytiled_read_int(m, &tileset->imagewidth);
+				break;
 
-		case 4864566659847942049U: // margin
-			tinytiled_read_int(m, &tileset->margin);
-			break;
+			case 2114495263010514843U: // imageheight
+				tinytiled_read_int(m, &tileset->imageheight);
+				break;
 
-		case 12661511911333414066U: // name
-			tinytiled_intern_string(m, &tileset->name);
-			break;
+			case 4864566659847942049U: // margin
+				tinytiled_read_int(m, &tileset->margin);
+				break;
 
-		case 8368542207491637236U: // properties
-			tinytiled_read_properties(m, &tileset->properties, &tileset->property_count);
-			break;
+			case 12661511911333414066U: // name
+				tinytiled_intern_string(m, &tileset->name);
+				break;
 
-		case 6491372721122724890U: // spacing
-			tinytiled_read_int(m, &tileset->spacing);
-			break;
+			case 8368542207491637236U: // properties
+				tinytiled_read_properties(m, &tileset->properties, &tileset->property_count);
+				break;
 
-		case 4065097716972592720U: // tilecount
-			tinytiled_read_int(m, &tileset->tilecount);
-			break;
+			case 6491372721122724890U: // spacing
+				tinytiled_read_int(m, &tileset->spacing);
+				break;
 
-		case 13337683360624280154U: // tileheight
-			tinytiled_read_int(m, &tileset->tileheight);
-			break;
+			case 4065097716972592720U: // tilecount
+				tinytiled_read_int(m, &tileset->tilecount);
+				break;
 
-		case 6504415465426505561U: // tilewidth
-			tinytiled_read_int(m, &tileset->tilewidth);
-			break;
+			case 13337683360624280154U: // tileheight
+				tinytiled_read_int(m, &tileset->tileheight);
+				break;
 
-		case 13509284784451838071U: // type
-			tinytiled_intern_string(m, &tileset->type);
-			break;
+			case 6504415465426505561U: // tilewidth
+				tinytiled_read_int(m, &tileset->tilewidth);
+				break;
 
-		case 8053780534892277672: // source
-			tinytiled_intern_string(m, &tileset->source);
-			break;
+			case 13509284784451838071U: // type
+				tinytiled_intern_string(m, &tileset->type);
+				break;
 
-		default:
-			TINYTILED_CHECK(0, "Unknown identifier found.");
+			case 8053780534892277672: // source
+				tinytiled_intern_string(m, &tileset->source);
+				break;
+
+			default:
+				TINYTILED_CHECK(0, "Unknown identifier found.");
+			}
+
+			tinytiled_try(m, ',');
 		}
 
-		tinytiled_try(m, ',');
+		tinytiled_expect(m, '}');
+		return tileset;
 	}
-
-	tinytiled_expect(m, '}');
-	return tileset;
 
 tinytiled_err:
 	return 0;
@@ -1929,102 +1953,104 @@ tinytiled_err:
 
 static int tinytiled_dispatch_map_internal(tinytiled_map_internal_t* m)
 {
-	tinytiled_read_string(m);
-	tinytiled_expect(m, ':');
-	TINYTILED_U64 h = tinytiled_FNV1a(m->scratch, m->scratch_len + 1);
-
- 	switch (h)
 	{
-	case 17465100621023921744U: // backgroundcolor
-		tinytiled_expect(m, '"');
-		tinytiled_read_hex_int(m, &m->map.backgroundcolor);
-		tinytiled_expect(m, '"');
-		break;
+		tinytiled_read_string(m);
+		tinytiled_expect(m, ':');
+		TINYTILED_U64 h = tinytiled_FNV1a(m->scratch, m->scratch_len + 1);
 
-	case 809651598226485190U: // height
-		tinytiled_read_int(m, &m->map.height);
-		break;
-
-	case 16529928297377797591U: // infinite
-		tinytiled_read_bool(m, &m->map.infinite);
-		break;
-
-	case 4566956252693479661U: // layers
-		tinytiled_expect(m, '[');
-
-		while (tinytiled_peak(m) != ']')
+			switch (h)
 		{
-			tinytiled_layer_t* layer = tinytiled_layers(m);
-			TINYTILED_FAIL_IF(!layer);
-			layer->next = m->map.layers;
-			m->map.layers = layer;
-			tinytiled_try(m, ',');
+		case 17465100621023921744u: // backgroundcolor
+			tinytiled_expect(m, '"');
+			tinytiled_read_hex_int(m, &m->map.backgroundcolor);
+			tinytiled_expect(m, '"');
+			break;
+
+		case 809651598226485190u: // height
+			tinytiled_read_int(m, &m->map.height);
+			break;
+
+		case 16529928297377797591u: // infinite
+			tinytiled_read_bool(m, &m->map.infinite);
+			break;
+
+		case 4566956252693479661u: // layers
+			tinytiled_expect(m, '[');
+
+			while (tinytiled_peak(m) != ']')
+			{
+				tinytiled_layer_t* layer = tinytiled_layers(m);
+				TINYTILED_FAIL_IF(!layer);
+				layer->next = m->map.layers;
+				m->map.layers = layer;
+				tinytiled_try(m, ',');
+			}
+
+			tinytiled_expect(m, ']');
+			break;
+
+		case 11291153769551921430u: // nextobjectid
+			tinytiled_read_int(m, &m->map.nextobjectid);
+			break;
+
+		case 563935667693078739u: // orientation
+			tinytiled_intern_string(m, &m->map.orientation);
+			break;
+
+		case 8368542207491637236u: // properties
+			tinytiled_read_properties(m, &m->map.properties, &m->map.property_count);
+			break;
+
+		case 16693886730115578029u: // renderorder
+			tinytiled_intern_string(m, &m->map.renderorder);
+			break;
+
+		case 1007832939408977147u: // tiledversion
+			tinytiled_intern_string(m, &m->map.tiledversion);
+			break;
+
+		case 13337683360624280154u: // tileheight
+			tinytiled_read_int(m, &m->map.tileheight);
+			break;
+
+		case 8310322674355535532u: // tilesets
+		{
+			tinytiled_expect(m, '[');
+
+			while (tinytiled_peak(m) != ']')
+			{
+				tinytiled_tileset_t* tileset = tinytiled_tileset(m);
+				TINYTILED_FAIL_IF(!tileset);
+				tileset->next = m->map.tilesets;
+				m->map.tilesets = tileset;
+				tinytiled_try(m, ',');
+			}
+
+			tinytiled_expect(m, ']');
+		}	break;
+
+		case 6504415465426505561u: // tilewidth
+			tinytiled_read_int(m, &m->map.tilewidth);
+			break;
+
+		case 13509284784451838071u: // type
+			tinytiled_intern_string(m, &m->map.type);
+			break;
+
+		case 8196820454517111669u: // version
+			tinytiled_read_int(m, &m->map.version);
+			break;
+
+		case 7400839267610537869u: // width
+			tinytiled_read_int(m, &m->map.width);
+			break;
+
+		default:
+			TINYTILED_CHECK(0, "unknown identifier found.");
 		}
 
-		tinytiled_expect(m, ']');
-		break;
-
-	case 11291153769551921430U: // nextobjectid
-		tinytiled_read_int(m, &m->map.nextobjectid);
-		break;
-
-	case 563935667693078739U: // orientation
-		tinytiled_intern_string(m, &m->map.orientation);
-		break;
-
-	case 8368542207491637236U: // properties
-		tinytiled_read_properties(m, &m->map.properties, &m->map.property_count);
-		break;
-
-	case 16693886730115578029U: // renderorder
-		tinytiled_intern_string(m, &m->map.renderorder);
-		break;
-
-	case 1007832939408977147U: // tiledversion
-		tinytiled_intern_string(m, &m->map.tiledversion);
-		break;
-
-	case 13337683360624280154U: // tileheight
-		tinytiled_read_int(m, &m->map.tileheight);
-		break;
-
-	case 8310322674355535532U: // tilesets
-	{
-		tinytiled_expect(m, '[');
-
-		while (tinytiled_peak(m) != ']')
-		{
-			tinytiled_tileset_t* tileset = tinytiled_tileset(m);
-			TINYTILED_FAIL_IF(!tileset);
-			tileset->next = m->map.tilesets;
-			m->map.tilesets = tileset;
-			tinytiled_try(m, ',');
-		}
-
-		tinytiled_expect(m, ']');
-	}	break;
-
-	case 6504415465426505561U: // tilewidth
-		tinytiled_read_int(m, &m->map.tilewidth);
-		break;
-
-	case 13509284784451838071U: // type
-		tinytiled_intern_string(m, &m->map.type);
-		break;
-
-	case 8196820454517111669U: // version
-		tinytiled_read_int(m, &m->map.version);
-		break;
-
-	case 7400839267610537869U: // width
-		tinytiled_read_int(m, &m->map.width);
-		break;
-
-	default:
-		TINYTILED_CHECK(0, "Unknown identifier found.");
+		return 1;
 	}
-
-	return 1;
 
 tinytiled_err:
 	return 0;

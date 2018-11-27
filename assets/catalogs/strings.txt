@@ -1,0 +1,13 @@
+eulaTitle This is an elua
+eulaBody You agree to stuff...
+eulaApproveText I agree
+eulaDisapproveText I don't agree
+storyTitle Story
+
+storyBody If there was a story, it'd be here
+
+levelImageChooseText \nCHOOSE A LEVEL:
+levelImage1Text Level 1
+levelImage2Text Level 2
+levelImage3Text Level 3
+patreonPage https://www.patreon.com/somePatreon
