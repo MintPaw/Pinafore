@@ -6,7 +6,8 @@
 
 enum State {
 	STATE_NULL=0,
-	STATE_BKAtkLL1,
+	STATE_BK_IDLE_LEFT,
+	STATE_BK_IDLE_RIGHT,
 	STATE_FINAL,
 };
 
@@ -35,8 +36,21 @@ struct Frame {
 	int absFrame;
 };
 
-enum Species;
+enum UnitType {
+	UNIT_NULL=0,
+	UNIT_BLUE_KNIGHT,
+};
 
+struct Unit {
+	bool exists;
+
+	float x;
+	float y;
+	UnitType type;
+	bool facingLeft;
+};
+
+#define UNIT_LIMIT 1024
 struct Game {
 	int frameCount;
 	float secondCount;
@@ -56,6 +70,9 @@ struct Game {
 	ImFont *defaultGuiFont;
 	ImFont *smallGuiFont;
 
+	Unit units[UNIT_LIMIT];
+	int currentLevel;
+
 	Texture *finalRT;
 	Texture *gameRT;
 	Texture *tempRT;
@@ -66,6 +83,7 @@ Game *game = NULL;
 
 void updateGame();
 void loadAnimations();
+Unit *newUnit();
 
 Frame *getFrame(const char *frameName);
 int getAnimFrameAtSecond(Animation *anim, float time);
@@ -162,10 +180,43 @@ void updateGame() {
 		if (keyPressed(KEY_UP)) inputUp = true;
 		if (keyPressed(KEY_DOWN)) inputDown = true;
 		// if (keyJustPressed('A'))  playSound(game->metro);
-		if (keyJustPressed(KEY_BACKTICK)) showDemo = !showDemo;
+		if (keyPressed(KEY_CTRL) && keyJustPressed(KEY_BACKTICK)) showDemo = !showDemo;
 	}
 
 	if (showDemo) ImGui::ShowDemoWindow(&showDemo);
+
+	// ImGui::Begin("Dev menu", NULL, ImGuiWindowFlags_None);
+	if (game->currentLevel == 0) {
+		game->currentLevel = 1; 
+
+		Unit *unit1 = newUnit();
+		unit1->type = UNIT_BLUE_KNIGHT;
+		unit1->x = 100;
+		unit1->y = 600;
+	}
+
+	for (int i = 0; i < UNIT_LIMIT; i++) {
+		Unit *unit = &game->units[i];
+		if (!unit->exists) continue;
+
+		if (unit->type == UNIT_BLUE_KNIGHT) {
+			Animation *anim = NULL;
+			if (unit->facingLeft) {
+				anim = game->anims[STATE_BK_IDLE_LEFT];
+			} else {
+				anim = game->anims[STATE_BK_IDLE_RIGHT];
+			}
+
+			int framesIn = getAnimFrameAtSecond(anim, 0);
+			Frame *frame = &game->spriteFrames[anim->frames[framesIn]];
+
+			RenderProps props = newRenderProps();
+			setFrameProps(frame, &props);
+			props.x += unit->x;
+			props.y += unit->y;
+			drawTexture(game->sprites, &props);
+		}
+	}
 
 	{ /// Update emitters
 		updateEmitters(1.0);
@@ -218,6 +269,20 @@ void updateGame() {
 	getNanoTime(&endTime);
 	game->lastFrameTime = getMsPassed(&startTime, &endTime);
 	// if (game->frameCount % 60 == 0) printf("ft: %f\n", game->lastFrameTime);
+}
+
+Unit *newUnit() {
+	for (int i = 0; i < UNIT_LIMIT; i++) {
+		Unit *unit = &game->units[i];
+		if (!unit->exists) {
+			memset(unit, 0, sizeof(Unit));
+			unit->exists = true;
+			return unit;
+		}
+	}
+
+	//TODO: Log no more units
+	return NULL;
 }
 
 void loadAnimations() {
@@ -321,10 +386,14 @@ void loadAnimations() {
 		for (int i = 0; i < tempAnimNamesNum; i++) {
 			Animation *anim = &game->spriteAnims[i];
 
-			if (streq(anim->name, "blueKnight/BKAtkLL1")) {
+			if (streq(anim->name, "blueKnight/BKIdleLL1")) {
 				// anim->speed = 0.2;
 				anim->loops = true;
-				game->anims[STATE_BKAtkLL1] = anim;
+				game->anims[STATE_BK_IDLE_LEFT] = anim;
+			} else if (streq(anim->name, "blueKnight/BKIdleRL1")) {
+				// anim->speed = 0.2;
+				anim->loops = true;
+				game->anims[STATE_BK_IDLE_RIGHT] = anim;
 			}
 		}
 
