@@ -12,6 +12,8 @@ enum State {
 	STATE_BK_WALK_RIGHT,
 	STATE_BK_ATTACK_LEFT,
 	STATE_BK_ATTACK_RIGHT,
+	STATE_BK_TRANS_LEFT_TO_RIGHT,
+	STATE_BK_TRANS_RIGHT_TO_LEFT,
 
 	STATE_RM_IDLE_LEFT,
 	STATE_RM_IDLE_RIGHT,
@@ -19,6 +21,8 @@ enum State {
 	STATE_RM_WALK_RIGHT,
 	STATE_RM_ATTACK_LEFT,
 	STATE_RM_ATTACK_RIGHT,
+	STATE_RM_TRANS_LEFT_TO_RIGHT,
+	STATE_RM_TRANS_RIGHT_TO_LEFT,
 
 	STATE_FINAL,
 };
@@ -89,6 +93,7 @@ struct Unit {
 	float timeOnCommand;
 	float timeIdle;
 	float timeAttacking;
+	float timeFacing;
 
 	AiType aiType;
 };
@@ -286,6 +291,8 @@ void updateGame() {
 			else if (unit->keyToSelect) ImGui::Text("Press %c to select", unit->keyToSelect);
 			if (unit->queueNum == 0) ImGui::Text("Idle for %0.1fs", unit->timeIdle);
 			else ImGui::Text("Executing command %d/%d for %0.1fs", unit->queueIndex+1, unit->queueNum, unit->timeOnCommand);
+			ImGui::Text("Facing current direction for %0.1fs", unit->timeFacing);
+			ImGui::Separator();
 
 			ImGui::Text("Ai type:");
 			ImGui::RadioButton("None", (int *)&unit->aiType, (int)AI_NULL);
@@ -345,6 +352,9 @@ void updateGame() {
 			}
 		}
 
+		bool oldFacingLeft = unit->facingLeft;
+		float turnAroundTime = 0.25;
+
 		if (unit->queueNum > 0) {
 			if (unit->queueIndex >= unit->queueNum) {
 				unit->queueIndex = unit->queueNum = 0;
@@ -352,6 +362,7 @@ void updateGame() {
 			} else {
 				Command *command = &unit->queue[unit->queueIndex];
 				float moveSpeed = 3;
+				if (unit->timeFacing < turnAroundTime) moveSpeed = 0;
 				if (command->type == COMMAND_MOVE) {
 					if (distanceBetween(unit->x, unit->y, command->movePos.x, command->movePos.y) <= moveSpeed * 2) {
 						unit->queueIndex++;
@@ -382,30 +393,41 @@ void updateGame() {
 			unit->timeIdle += elapsed;
 		}
 
+		if (oldFacingLeft != unit->facingLeft) unit->timeFacing = 0;
+		unit->timeFacing += elapsed;
+
 		Animation *anim = NULL;
 		float animTime = 0;
 
-		if (unit->queueNum == 0) {
-			if (unit->type == UNIT_BLUE_KNIGHT && unit->facingLeft) anim = game->anims[STATE_BK_IDLE_LEFT];
-			if (unit->type == UNIT_BLUE_KNIGHT && !unit->facingLeft) anim = game->anims[STATE_BK_IDLE_RIGHT];
-			if (unit->type == UNIT_RED_MINOTAUR && unit->facingLeft) anim = game->anims[STATE_RM_IDLE_LEFT];
-			if (unit->type == UNIT_RED_MINOTAUR && !unit->facingLeft) anim = game->anims[STATE_RM_IDLE_RIGHT];
-			animTime = unit->timeIdle;
+		if (unit->timeFacing < turnAroundTime) {
+			if (unit->type == UNIT_BLUE_KNIGHT && unit->facingLeft) anim = game->anims[STATE_BK_TRANS_RIGHT_TO_LEFT];
+			if (unit->type == UNIT_BLUE_KNIGHT && !unit->facingLeft) anim = game->anims[STATE_BK_TRANS_LEFT_TO_RIGHT];
+			if (unit->type == UNIT_RED_MINOTAUR && unit->facingLeft) anim = game->anims[STATE_RM_TRANS_RIGHT_TO_LEFT];
+			if (unit->type == UNIT_RED_MINOTAUR && !unit->facingLeft) anim = game->anims[STATE_RM_TRANS_LEFT_TO_RIGHT];
+			animTime = unit->timeFacing/turnAroundTime * getAnimLength(anim);
 		} else {
-			Command *command = &unit->queue[unit->queueIndex];
+			if (unit->queueNum == 0) {
+				if (unit->type == UNIT_BLUE_KNIGHT && unit->facingLeft) anim = game->anims[STATE_BK_IDLE_LEFT];
+				if (unit->type == UNIT_BLUE_KNIGHT && !unit->facingLeft) anim = game->anims[STATE_BK_IDLE_RIGHT];
+				if (unit->type == UNIT_RED_MINOTAUR && unit->facingLeft) anim = game->anims[STATE_RM_IDLE_LEFT];
+				if (unit->type == UNIT_RED_MINOTAUR && !unit->facingLeft) anim = game->anims[STATE_RM_IDLE_RIGHT];
+				animTime = unit->timeIdle;
+			} else {
+				Command *command = &unit->queue[unit->queueIndex];
 
-			if (command->type == COMMAND_MOVE || (command->type == COMMAND_ATTACK && unit->timeAttacking == 0)) {
-				if (unit->type == UNIT_BLUE_KNIGHT && unit->facingLeft) anim = game->anims[STATE_BK_WALK_LEFT];
-				if (unit->type == UNIT_BLUE_KNIGHT && !unit->facingLeft) anim = game->anims[STATE_BK_WALK_RIGHT];
-				if (unit->type == UNIT_RED_MINOTAUR && unit->facingLeft) anim = game->anims[STATE_RM_WALK_LEFT];
-				if (unit->type == UNIT_RED_MINOTAUR && !unit->facingLeft) anim = game->anims[STATE_RM_WALK_RIGHT];
-				animTime = unit->timeOnCommand;
-			} else if (command->type == COMMAND_ATTACK && unit->timeAttacking > 0) {
-				if (unit->type == UNIT_BLUE_KNIGHT && unit->facingLeft) anim = game->anims[STATE_BK_ATTACK_LEFT];
-				if (unit->type == UNIT_BLUE_KNIGHT && !unit->facingLeft) anim = game->anims[STATE_BK_ATTACK_RIGHT];
-				if (unit->type == UNIT_RED_MINOTAUR && unit->facingLeft) anim = game->anims[STATE_RM_ATTACK_LEFT];
-				if (unit->type == UNIT_RED_MINOTAUR && !unit->facingLeft) anim = game->anims[STATE_RM_ATTACK_RIGHT];
-				animTime = unit->timeAttacking;
+				if (command->type == COMMAND_MOVE || (command->type == COMMAND_ATTACK && unit->timeAttacking == 0)) {
+					if (unit->type == UNIT_BLUE_KNIGHT && unit->facingLeft) anim = game->anims[STATE_BK_WALK_LEFT];
+					if (unit->type == UNIT_BLUE_KNIGHT && !unit->facingLeft) anim = game->anims[STATE_BK_WALK_RIGHT];
+					if (unit->type == UNIT_RED_MINOTAUR && unit->facingLeft) anim = game->anims[STATE_RM_WALK_LEFT];
+					if (unit->type == UNIT_RED_MINOTAUR && !unit->facingLeft) anim = game->anims[STATE_RM_WALK_RIGHT];
+					animTime = unit->timeOnCommand;
+				} else if (command->type == COMMAND_ATTACK && unit->timeAttacking > 0) {
+					if (unit->type == UNIT_BLUE_KNIGHT && unit->facingLeft) anim = game->anims[STATE_BK_ATTACK_LEFT];
+					if (unit->type == UNIT_BLUE_KNIGHT && !unit->facingLeft) anim = game->anims[STATE_BK_ATTACK_RIGHT];
+					if (unit->type == UNIT_RED_MINOTAUR && unit->facingLeft) anim = game->anims[STATE_RM_ATTACK_LEFT];
+					if (unit->type == UNIT_RED_MINOTAUR && !unit->facingLeft) anim = game->anims[STATE_RM_ATTACK_RIGHT];
+					animTime = unit->timeAttacking;
+				}
 			}
 		}
 
@@ -625,6 +647,12 @@ void loadAnimations() {
 			} else if (streq(anim->name, "blueKnight/BKAtkRL")) {
 				anim->loops = true;
 				game->anims[STATE_BK_ATTACK_RIGHT] = anim;
+			} else if (streq(anim->name, "blueKnight/BKTransLL")) {
+				anim->loops = true;
+				game->anims[STATE_BK_TRANS_LEFT_TO_RIGHT] = anim;
+			} else if (streq(anim->name, "blueKnight/BKTransRR")) {
+				anim->loops = true;
+				game->anims[STATE_BK_TRANS_RIGHT_TO_LEFT] = anim;
 			}
 
 			else if (streq(anim->name, "redMinotaur/RMIdleLL")) {
@@ -645,6 +673,12 @@ void loadAnimations() {
 			} else if (streq(anim->name, "redMinotaur/RMAtkLR")) {
 				anim->loops = true;
 				game->anims[STATE_RM_ATTACK_RIGHT] = anim;
+			} else if (streq(anim->name, "redMinotaur/RMTransRR")) {
+				anim->loops = true;
+				game->anims[STATE_RM_TRANS_LEFT_TO_RIGHT] = anim;
+			} else if (streq(anim->name, "redMinotaur/RMTransLL")) {
+				anim->loops = true;
+				game->anims[STATE_RM_TRANS_RIGHT_TO_LEFT] = anim;
 			}
 		}
 
